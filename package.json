@@ -1,0 +1,39 @@
+{
+  "name": "bizportal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "proxy": "node proxy-server.js",
+    "dev:full": "concurrently \"npm run server:dev\" \"npm run dev\"",
+    "server": "cd server && node index.js",
+    "server:dev": "cd server && npx nodemon index.js",
+    "db:migrate": "cd server && npx knex migrate:latest --env development",
+    "db:seed": "cd server && npx knex seed:run --env development",
+    "db:setup": "npm run db:migrate && npm run db:seed",
+    "db:migrate:prod": "cd server && NODE_ENV=production npx knex migrate:latest",
+    "db:reset": "cd server && npx knex migrate:rollback --all && npm run db:setup"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.23.1",
+    "axios": "^1.7.2",
+    "recharts": "^2.12.7",
+    "lucide-react": "^0.383.0",
+    "clsx": "^2.1.1",
+    "date-fns": "^3.6.0",
+    "concurrently": "^8.2.2",
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.3.1"
+  }
+}

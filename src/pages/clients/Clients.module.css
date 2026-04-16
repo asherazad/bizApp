@@ -1,0 +1,58 @@
+.row { cursor: pointer; transition: background .1s; }
+.row:hover td { background: var(--bg-muted); }
+
+.panel {
+  width: 320px;
+  min-width: 320px;
+  border-left: 0.5px solid var(--border);
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border-bottom: 0.5px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-surface);
+  z-index: 1;
+}
+
+.panelBody { padding: 16px; display: flex; flex-direction: column; gap: 0; }
+
+.statsRow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+
+.statBox {
+  background: var(--bg-muted);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+}
+
+.statLabel { font-size: 10px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 3px; }
+.statVal   { font-size: 16px; font-weight: 500; color: var(--text-primary); }
+
+.detailGrid {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 6px 12px;
+  font-size: 12.5px;
+  margin-bottom: 4px;
+}
+
+.detailKey { color: var(--text-tertiary); font-size: 11px; padding-top: 1px; }
+
+.invRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 0.5px solid var(--border);
+  cursor: pointer;
+}
+.invRow:last-child { border-bottom: none; }
+.invRow:hover { opacity: .8; }

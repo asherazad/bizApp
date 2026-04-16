@@ -1,0 +1,96 @@
+.editorLayout {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 16px;
+  padding: 20px 24px;
+  align-items: start;
+}
+
+.formCol { display: flex; flex-direction: column; gap: 14px; }
+
+.sideCol { display: flex; flex-direction: column; gap: 12px; position: sticky; top: calc(var(--topbar-h) + 16px); }
+
+.typeToggle {
+  display: flex;
+  gap: 0;
+  background: var(--bg-muted);
+  border-radius: var(--r-md);
+  padding: 3px;
+  align-self: flex-start;
+}
+
+.typeBtn {
+  height: 30px; padding: 0 16px; font-size: 12.5px;
+  background: transparent; border: none;
+  border-radius: calc(var(--r-md) - 2px);
+  color: var(--text-secondary); cursor: pointer;
+  transition: background .12s, color .12s;
+}
+
+.typeActive {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+
+.headerGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.lineTable th { padding: 8px 10px; }
+.lineTable td { padding: 5px 6px; vertical-align: middle; }
+.lineTable tbody tr:hover td { background: transparent; }
+
+.tdDesc  { min-width: 240px; }
+.tdNum   { width: 90px; }
+.tdTotal { text-align: right; font-weight: 500; font-size: 13px; white-space: nowrap; padding-right: 10px !important; }
+
+.descInput { width: 100%; }
+.numInput  { width: 100%; text-align: right; }
+
+.lineRow td { border-bottom: 0.5px solid var(--border); }
+.lineRow:last-child td { border-bottom: none; }
+
+.totalsPanel {
+  background: var(--bg-surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.totalRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+  gap: 8px;
+}
+
+.grandTotal {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-primary);
+  border-top: 0.5px solid var(--border);
+  padding-top: 10px;
+  margin-top: 2px;
+}
+
+.notesGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 1000px) {
+  .editorLayout { grid-template-columns: 1fr; }
+  .sideCol { position: static; }
+  .headerGrid { grid-template-columns: 1fr; }
+  .notesGrid  { grid-template-columns: 1fr; }
+}
