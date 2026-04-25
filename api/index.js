@@ -75,8 +75,20 @@ app.get('/api/departments', resolveTenant, authenticate, async (req, res) => {
 app.get('/api/health', (req, res) => res.json({
   ok:  true,
   env: process.env.NODE_ENV,
-  db:  DB_URL ? 'configured' : 'missing',
+  db:  DB_URL ? 'configured' : 'missing — set DATABASE_URL in Vercel env vars',
 }))
+
+// ── Global Express error handler ──────────────────────────
+// Catches any unhandled error thrown inside route/middleware
+app.use((err, req, res, _next) => {
+  console.error('[API error]', err)
+  res.status(500).json({ error: err.message || 'Internal server error' })
+})
+
+// ── Prevent Node 20 from crashing on unhandled rejections ─
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason)
+})
 
 // ── Export for Vercel ─────────────────────────────────────
 module.exports = app

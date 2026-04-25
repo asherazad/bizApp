@@ -3,21 +3,23 @@ const db   = require('../db')
 
 // ─── Resolve tenant from slug (subdomain or header) ───────
 async function resolveTenant(req, res, next) {
-  // Support: x-tenant-slug header (dev) or subdomain (prod)
-  const slug = req.headers['x-tenant-slug'] || req.hostname.split('.')[0]
+  try {
+    const slug = req.headers['x-tenant-slug'] || req.hostname.split('.')[0]
 
-  if (!slug || slug === 'localhost' || slug === '127') {
-    // Dev fallback — use first active tenant
-    const tenant = await db('tenants').where({ is_active: true }).first()
-    if (!tenant) return res.status(404).json({ error: 'No tenant found' })
+    if (!slug || slug === 'localhost' || slug === '127') {
+      const tenant = await db('tenants').where({ is_active: true }).first()
+      if (!tenant) return res.status(404).json({ error: 'No tenant found' })
+      req.tenant = tenant
+      return next()
+    }
+
+    const tenant = await db('tenants').where({ slug, is_active: true }).first()
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' })
     req.tenant = tenant
-    return next()
+    next()
+  } catch (err) {
+    res.status(503).json({ error: 'Database unavailable', detail: err.message })
   }
-
-  const tenant = await db('tenants').where({ slug, is_active: true }).first()
-  if (!tenant) return res.status(404).json({ error: 'Tenant not found' })
-  req.tenant = tenant
-  next()
 }
 
 // ─── Authenticate JWT ──────────────────────────────────────
