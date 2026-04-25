@@ -36,11 +36,13 @@ app.use(cors({
 app.use(express.json({ limit: '25mb' }))
 
 // ── Database connection (Supabase PostgreSQL) ─────────────
-// Uses DATABASE_URL from Vercel environment variables
+// DATABASE_URL (manual) or POSTGRES_URL (Vercel Supabase integration)
+const DB_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL
+
 const knex = require('knex')({
   client: 'pg',
   connection: {
-    connectionString: process.env.DATABASE_URL,
+    connectionString: DB_URL,
     ssl: process.env.NODE_ENV === 'production'
       ? { rejectUnauthorized: false }
       : false,
@@ -55,10 +57,13 @@ global.__db = knex // fallback for modules that import db directly
 // ── Routes ────────────────────────────────────────────────
 const { resolveTenant, authenticate } = require('../server/middleware/auth')
 
-app.use('/api/auth',       require('../server/routes/auth'))
-app.use('/api/clients',    resolveTenant, authenticate, require('../server/routes/clients'))
-app.use('/api/invoices',   resolveTenant, authenticate, require('../server/routes/invoices'))
-app.use('/api/quotations', resolveTenant, authenticate, require('../server/routes/quotations'))
+app.use('/api/auth',        require('../server/routes/auth'))
+app.use('/api/clients',     resolveTenant, authenticate, require('../server/routes/clients'))
+app.use('/api/invoices',    resolveTenant, authenticate, require('../server/routes/invoices'))
+app.use('/api/quotations',  resolveTenant, authenticate, require('../server/routes/quotations'))
+app.use('/api/users',       resolveTenant, authenticate, require('../server/routes/users'))
+app.use('/api/roles',       resolveTenant, authenticate, require('../server/routes/roles'))
+app.use('/api/businesses',  resolveTenant, authenticate, require('../server/routes/businesses'))
 
 app.get('/api/departments', resolveTenant, authenticate, async (req, res) => {
   try {
@@ -70,7 +75,7 @@ app.get('/api/departments', resolveTenant, authenticate, async (req, res) => {
 app.get('/api/health', (req, res) => res.json({
   ok:  true,
   env: process.env.NODE_ENV,
-  db:  process.env.DATABASE_URL ? 'configured' : 'missing',
+  db:  DB_URL ? 'configured' : 'missing',
 }))
 
 // ── Export for Vercel ─────────────────────────────────────

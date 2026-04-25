@@ -10,6 +10,7 @@ import Dashboard            from './pages/dashboard/Dashboard'
 import Users                from './pages/users/Users'
 import Roles                from './pages/roles/Roles'
 import Departments          from './pages/departments/Departments'
+import Businesses           from './pages/businesses/Businesses'
 import ComingSoon           from './pages/ComingSoon'
 import Clients              from './pages/clients/Clients'
 import InvoiceList          from './pages/invoices/InvoiceList'
@@ -70,6 +71,7 @@ export default function App() {
             <Route path="settings/users"             element={<Users />} />
             <Route path="settings/roles"             element={<Roles />} />
             <Route path="settings/departments"       element={<Departments />} />
+            <Route path="settings/businesses"        element={<Businesses />} />
             <Route path="*"                          element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

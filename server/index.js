@@ -8,10 +8,13 @@ app.use(express.json({ limit: '25mb' }))
 
 const { resolveTenant, authenticate } = require('./middleware/auth')
 
-app.use('/api/auth',       require('./routes/auth'))
-app.use('/api/clients',    resolveTenant, authenticate, require('./routes/clients'))
-app.use('/api/invoices',   resolveTenant, authenticate, require('./routes/invoices'))
-app.use('/api/quotations', resolveTenant, authenticate, require('./routes/quotations'))
+app.use('/api/auth',        require('./routes/auth'))
+app.use('/api/clients',     resolveTenant, authenticate, require('./routes/clients'))
+app.use('/api/invoices',    resolveTenant, authenticate, require('./routes/invoices'))
+app.use('/api/quotations',  resolveTenant, authenticate, require('./routes/quotations'))
+app.use('/api/users',       resolveTenant, authenticate, require('./routes/users'))
+app.use('/api/roles',       resolveTenant, authenticate, require('./routes/roles'))
+app.use('/api/businesses',  resolveTenant, authenticate, require('./routes/businesses'))
 
 app.get('/api/departments', resolveTenant, authenticate, async (req, res) => {
   try {

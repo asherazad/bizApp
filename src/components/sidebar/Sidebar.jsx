@@ -26,7 +26,8 @@ const NAV = [
     { to: '/reports',     label: 'Reports & P&L',      dot: 'purple' },
   ]},
   { label: 'Settings', items: [
-    { to: '/settings/departments', label: 'Departments', dot: 'gray' },
+    { to: '/settings/businesses',  label: 'Businesses',   dot: 'gray' },
+    { to: '/settings/departments', label: 'Departments',  dot: 'gray' },
     { to: '/settings/users',       label: 'Users',        dot: 'gray' },
     { to: '/settings/roles',       label: 'Roles',        dot: 'gray' },
   ]},
