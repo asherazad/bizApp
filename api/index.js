@@ -72,11 +72,49 @@ app.get('/api/departments', resolveTenant, authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-app.get('/api/health', (req, res) => res.json({
-  ok:  true,
-  env: process.env.NODE_ENV,
-  db:  DB_URL ? 'configured' : 'missing — set DATABASE_URL in Vercel env vars',
-}))
+app.get('/api/health', async (req, res) => {
+  const result = {
+    ok:  true,
+    env: process.env.NODE_ENV,
+    db_url_set: !!DB_URL,
+    db: 'untested',
+    tables: [],
+    error: null,
+  }
+
+  if (!DB_URL) {
+    result.ok    = false
+    result.db    = 'DATABASE_URL not set — add it in Vercel → Settings → Environment Variables'
+    return res.status(503).json(result)
+  }
+
+  try {
+    // Real connection test — runs SELECT 1
+    await knex.raw('SELECT 1')
+    result.db = 'connected'
+
+    // Check which app tables exist
+    const rows = await knex('information_schema.tables')
+      .where({ table_schema: 'public' })
+      .select('table_name')
+      .orderBy('table_name')
+    result.tables = rows.map(r => r.table_name)
+
+    const required = ['tenants', 'users', 'roles', 'user_roles', 'user_business_access']
+    const missing  = required.filter(t => !result.tables.includes(t))
+    if (missing.length) {
+      result.ok    = false
+      result.db    = 'connected but migrations not run'
+      result.error = `Missing tables: ${missing.join(', ')} — run: npm run db:migrate:prod`
+    }
+  } catch (err) {
+    result.ok    = false
+    result.db    = 'connection failed'
+    result.error = err.message
+  }
+
+  res.status(result.ok ? 200 : 503).json(result)
+})
 
 // ── Global Express error handler ──────────────────────────
 // Catches any unhandled error thrown inside route/middleware
