@@ -1,8 +1,15 @@
 {
   "version": 2,
-  "buildCommand": "echo 'No build yet'",
-  "outputDirectory": "public",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "installCommand": "npm install && cd server && npm install",
+  "framework": "vite",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
+    { "source": "/api/:path*", "destination": "/api/index.js" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/index.js": { "maxDuration": 30 }
+  },
+  "env": { "NODE_ENV": "production" }
 }
