@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "buildCommand": "echo 'No build yet'",
+  "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
