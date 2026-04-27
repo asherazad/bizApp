@@ -3,13 +3,12 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { formatCurrency, formatDate, formatStatus, statusBadgeClass } from '../../lib/format';
-import { Plus, Eye, CreditCard, Send, X, Trash2 } from 'lucide-react';
+import { Plus, Eye, CheckCircle, X, Trash2, FileText } from 'lucide-react';
 
 const CURRENCIES = ['PKR', 'USD', 'EUR', 'AED', 'GBP'];
-const STATUSES   = ['', 'draft', 'sent', 'partially_paid', 'fully_paid', 'overdue', 'cancelled'];
-const EMPTY_ITEM = { description: '', notes: '', quantity: '1', unit_price: '', amount: '' };
+const STATUSES   = ['', 'Pending', 'Received', 'Overdue', 'Disputed'];
+const EMPTY_ITEM = { description: '', notes: '', quantity: 1, unit_price: '', amount: '' };
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
 function calcItem(item, key, val) {
   const next = { ...item, [key]: val };
   if (key === 'unit_price' || key === 'quantity') {
@@ -18,80 +17,56 @@ function calcItem(item, key, val) {
   return next;
 }
 
-function calcTotals(items, taxRate) {
-  const subtotal = items.reduce((s, i) => s + parseFloat(i.amount || 0), 0);
-  const taxAmt   = subtotal * ((parseFloat(taxRate) || 0) / 100);
-  return { subtotal, taxAmt, total: subtotal + taxAmt };
-}
-
-// ─── PaymentModal ─────────────────────────────────────────────────────────────
-function PaymentModal({ invoice, onClose, onSaved }) {
+// ─── Receive Payment Modal ────────────────────────────────────────────────────
+function ReceiveModal({ invoice, onClose, onSaved }) {
   const toast = useToast();
   const [banks, setBanks]   = useState([]);
   const [saving, setSaving] = useState(false);
   const [form, setForm]     = useState({
-    bank_account_id: '', amount: String(parseFloat(invoice.total) - parseFloat(invoice.paid_amount || 0)),
-    currency_code: invoice.currency_code || 'PKR', exchange_rate: '1',
-    paid_date: new Date().toISOString().split('T')[0], reference: '', notes: '',
+    received_date: new Date().toISOString().split('T')[0],
+    received_bank_account_id: '',
+    notes: '',
   });
   function f(k) { return (e) => setForm((p) => ({ ...p, [k]: e.target.value })); }
 
   useEffect(() => {
-    api.get('/banks').then((r) => setBanks(r.data)).catch(() => {});
+    api.get('/banks/accounts').then((r) => setBanks(r.data)).catch(() => {});
   }, []);
 
   async function submit(e) {
     e.preventDefault(); setSaving(true);
     try {
-      await api.post(`/invoices/${invoice.id}/payments`, {
-        ...form, amount: parseFloat(form.amount), exchange_rate: parseFloat(form.exchange_rate),
-      });
-      toast('Payment recorded', 'success'); onSaved();
-    } catch (err) { toast(err.response?.data?.error || 'Error saving payment', 'error'); }
+      await api.post(`/invoices/${invoice.id}/receive`, form);
+      toast('Invoice marked as Received', 'success'); onSaved();
+    } catch (err) { toast(err.response?.data?.error || 'Error', 'error'); }
     finally { setSaving(false); }
   }
 
-  const outstanding = parseFloat(invoice.total) - parseFloat(invoice.paid_amount || 0);
-
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>Record Payment — #{invoice.invoice_number}</h3>
+          <h3>Mark Received — #{invoice.invoice_number}</h3>
           <button className="btn btn-secondary btn-sm" onClick={onClose}><X size={14}/></button>
         </div>
         <form onSubmit={submit}>
           <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ background: 'var(--bg)', padding: '10px 14px', borderRadius: 8, fontSize: 13 }}>
-              <span className="text-muted">Outstanding: </span>
-              <strong style={{ color: 'var(--danger)' }}>{formatCurrency(outstanding, invoice.currency_code)}</strong>
+              <span className="text-muted">Amount: </span>
+              <strong>{formatCurrency(invoice.total_amount, invoice.currency)}</strong>
             </div>
             <div className="form-group">
-              <label className="form-label">Bank Account</label>
-              <select className="form-control" value={form.bank_account_id} onChange={f('bank_account_id')}>
-                <option value="">— Cash / Unlinked —</option>
-                {banks.map((b) => <option key={b.id} value={b.id}>{b.bank_name} · {b.account_title} ({b.currency_code})</option>)}
+              <label className="form-label">Received Into (Bank Account)</label>
+              <select className="form-control" value={form.received_bank_account_id} onChange={f('received_bank_account_id')}>
+                <option value="">— Cash / Not specified —</option>
+                {banks.map((b) => (
+                  <option key={b.id} value={b.id}>{b.bank_name} · {b.account_title} ({b.currency})</option>
+                ))}
               </select>
             </div>
-            <div className="grid-2">
-              <div className="form-group">
-                <label className="form-label">Amount *</label>
-                <input type="number" step="0.01" className="form-control" required value={form.amount} onChange={f('amount')}/>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Date *</label>
-                <input type="date" className="form-control" required value={form.paid_date} onChange={f('paid_date')}/>
-              </div>
-            </div>
-            {form.currency_code !== 'PKR' && (
-              <div className="form-group">
-                <label className="form-label">Exchange Rate to PKR</label>
-                <input type="number" step="0.0001" className="form-control" value={form.exchange_rate} onChange={f('exchange_rate')}/>
-              </div>
-            )}
             <div className="form-group">
-              <label className="form-label">Reference / Cheque #</label>
-              <input className="form-control" placeholder="e.g. TRF-001" value={form.reference} onChange={f('reference')}/>
+              <label className="form-label">Date Received *</label>
+              <input type="date" className="form-control" required value={form.received_date} onChange={f('received_date')}/>
             </div>
             <div className="form-group">
               <label className="form-label">Notes</label>
@@ -100,7 +75,7 @@ function PaymentModal({ invoice, onClose, onSaved }) {
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Record Payment'}</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Mark Received'}</button>
           </div>
         </form>
       </div>
@@ -108,12 +83,12 @@ function PaymentModal({ invoice, onClose, onSaved }) {
   );
 }
 
-// ─── InvoiceDetail ────────────────────────────────────────────────────────────
+// ─── Invoice Detail ───────────────────────────────────────────────────────────
 function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) {
   const toast = useToast();
-  const [inv, setInv]           = useState(null);
-  const [payModal, setPayModal] = useState(false);
-  const [updating, setUpdating] = useState(false);
+  const [inv, setInv]             = useState(null);
+  const [receiveModal, setReceive] = useState(false);
+  const [updating, setUpdating]   = useState(false);
 
   const load = useCallback(async () => {
     try { setInv((await api.get(`/invoices/${invoiceId}`)).data); }
@@ -126,7 +101,7 @@ function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) {
     setUpdating(true);
     try {
       await api.put(`/invoices/${invoiceId}`, { status });
-      toast(`Status → ${formatStatus(status)}`, 'success');
+      toast(`Status updated to ${status}`, 'success');
       load(); onRefresh();
     } catch { toast('Update failed', 'error'); }
     finally { setUpdating(false); }
@@ -134,37 +109,41 @@ function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) {
 
   if (!inv) return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 720 }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 700 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</div>
       </div>
     </div>
   );
 
-  const outstanding = parseFloat(inv.total) - parseFloat(inv.paid_amount || 0);
-  const wing = wings.find((w) => w.id === inv.wing_id);
+  const lineItems = Array.isArray(inv.line_items) ? inv.line_items
+    : typeof inv.line_items === 'string' ? JSON.parse(inv.line_items || '[]')
+    : [];
+  const wing = wings.find((w) => w.id === inv.business_wing_id);
 
   return (
     <>
       <div className="modal-overlay" onClick={onClose}>
-        <div className="modal" style={{ maxWidth: 720 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal" style={{ maxWidth: 740 }} onClick={(e) => e.stopPropagation()}>
           <div className="modal-header">
             <h3>Invoice #{inv.invoice_number}</h3>
             <div className="flex gap-2">
-              <span className={`badge ${statusBadgeClass(inv.status)}`}>{formatStatus(inv.status)}</span>
+              <span className={`badge ${statusBadgeClass(inv.status)}`}>{inv.status}</span>
               <button className="btn btn-secondary btn-sm" onClick={onClose}><X size={14}/></button>
             </div>
           </div>
 
           <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Header info */}
+            {/* Header grid */}
             <div className="grid-2" style={{ gap: 8 }}>
               {[
-                ['Wing',         wing?.name || '—'],
-                ['Client',       inv.client_name || '—'],
-                ['Invoice Date', formatDate(inv.issue_date)],
-                ['Due Date',     formatDate(inv.due_date) || '—'],
-                ['Currency',     inv.currency_code],
-                ['PO Ref',       inv.po_id ? `#${inv.po_id}` : '—'],
+                ['Business Wing', wing?.name || '—'],
+                ['Vendor',        inv.vendor_name || '—'],
+                ['Client',        inv.client_name || '—'],
+                ['Invoice Date',  formatDate(inv.invoice_date)],
+                ['Due Date',      formatDate(inv.due_date) || '—'],
+                ['Currency',      inv.currency],
+                ['PO Reference',  inv.po_number || '—'],
+                ['Received Date', inv.received_date ? formatDate(inv.received_date) : '—'],
               ].map(([label, value]) => (
                 <div key={label} style={{ background: 'var(--bg)', borderRadius: 8, padding: '8px 12px' }}>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 2 }}>{label}</div>
@@ -174,63 +153,49 @@ function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) {
             </div>
 
             {/* Line items */}
-            <div>
-              <div style={{ fontWeight: 600, marginBottom: 8 }}>Line Items</div>
-              <table className="table" style={{ fontSize: 13 }}>
-                <thead>
-                  <tr><th style={{ width: '45%' }}>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr>
-                </thead>
-                <tbody>
-                  {(inv.items || []).map((it, i) => (
-                    <tr key={i}>
-                      <td>
-                        <div>{it.description}</div>
-                        {it.notes && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{it.notes}</div>}
-                      </td>
-                      <td className="font-mono">{it.quantity}</td>
-                      <td className="font-mono">{formatCurrency(it.unit_price, inv.currency_code)}</td>
-                      <td className="font-mono">{formatCurrency(it.amount, inv.currency_code)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {lineItems.length > 0 && (
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>Line Items</div>
+                <table className="table" style={{ fontSize: 13 }}>
+                  <thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
+                  <tbody>
+                    {lineItems.map((it, i) => (
+                      <tr key={i}>
+                        <td>
+                          <div>{it.description}</div>
+                          {it.notes && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{it.notes}</div>}
+                        </td>
+                        <td className="font-mono">{it.quantity}</td>
+                        <td className="font-mono">{formatCurrency(it.unit_price, inv.currency)}</td>
+                        <td className="font-mono">{formatCurrency(it.amount, inv.currency)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             {/* Totals */}
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <div style={{ minWidth: 280, background: 'var(--bg)', borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {[
-                  ['Subtotal',    formatCurrency(inv.subtotal, inv.currency_code), false],
-                  [`Tax (${inv.tax_rate}%)`, formatCurrency(inv.tax_amount, inv.currency_code), false],
-                  ['Total',       formatCurrency(inv.total, inv.currency_code), true],
-                  ['Paid',        formatCurrency(inv.paid_amount, inv.currency_code), false],
-                  ['Outstanding', formatCurrency(outstanding, inv.currency_code), false, outstanding > 0 ? 'var(--danger)' : 'var(--success)'],
-                ].map(([label, value, bold, color]) => (
+                  ['Subtotal',   formatCurrency(parseFloat(inv.total_amount) - parseFloat(inv.tax_amount || 0), inv.currency), false],
+                  ['Tax',        formatCurrency(inv.tax_amount || 0, inv.currency), false],
+                  ['Total',      formatCurrency(inv.total_amount, inv.currency), true],
+                  inv.currency !== 'PKR' && ['PKR Equivalent', formatCurrency(inv.pkr_equivalent, 'PKR'), false],
+                ].filter(Boolean).map(([label, value, bold]) => (
                   <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontWeight: bold ? 700 : 400, borderTop: bold ? '1px solid var(--border)' : 'none', paddingTop: bold ? 6 : 0 }}>
                     <span className="text-muted">{label}</span>
-                    <span className="font-mono" style={{ color }}>{value}</span>
+                    <span className="font-mono">{value}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Payment history */}
-            {(inv.payments || []).length > 0 && (
-              <div>
-                <div style={{ fontWeight: 600, marginBottom: 8 }}>Payment History</div>
-                <table className="table" style={{ fontSize: 13 }}>
-                  <thead><tr><th>Date</th><th>Amount</th><th>Bank</th><th>Reference</th></tr></thead>
-                  <tbody>
-                    {inv.payments.map((p) => (
-                      <tr key={p.id}>
-                        <td>{formatDate(p.paid_date)}</td>
-                        <td className="font-mono">{formatCurrency(p.amount, p.currency_code)}</td>
-                        <td>{p.bank_name || 'Cash'}</td>
-                        <td className="text-muted">{p.reference || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* Received info */}
+            {inv.status === 'Received' && inv.received_bank_name && (
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>
+                <strong>Received into:</strong> {inv.received_bank_name} on {formatDate(inv.received_date)}
               </div>
             )}
 
@@ -243,26 +208,20 @@ function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) {
 
           <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
             <div className="flex gap-2">
-              {inv.status === 'draft' && (
-                <button className="btn btn-secondary btn-sm" disabled={updating} onClick={() => updateStatus('sent')}>
-                  <Send size={13}/> Mark Sent
-                </button>
+              {inv.status === 'Pending' && (
+                <button className="btn btn-secondary btn-sm" disabled={updating} onClick={() => updateStatus('Overdue')}>Mark Overdue</button>
               )}
-              {['sent', 'partially_paid'].includes(inv.status) && (
-                <button className="btn btn-secondary btn-sm" disabled={updating} onClick={() => updateStatus('overdue')}>
-                  Mark Overdue
-                </button>
+              {inv.status === 'Overdue' && (
+                <button className="btn btn-secondary btn-sm" disabled={updating} onClick={() => updateStatus('Pending')}>Revert to Pending</button>
               )}
-              {inv.status === 'overdue' && (
-                <button className="btn btn-secondary btn-sm" disabled={updating} onClick={() => updateStatus('sent')}>
-                  Revert to Sent
-                </button>
+              {inv.status === 'Pending' && (
+                <button className="btn btn-secondary btn-sm" disabled={updating} onClick={() => updateStatus('Disputed')}>Mark Disputed</button>
               )}
             </div>
             <div className="flex gap-2">
-              {outstanding > 0 && !['cancelled', 'fully_paid'].includes(inv.status) && (
-                <button className="btn btn-primary btn-sm" onClick={() => setPayModal(true)}>
-                  <CreditCard size={13}/> Record Payment
+              {['Pending', 'Overdue'].includes(inv.status) && (
+                <button className="btn btn-primary btn-sm" onClick={() => setReceive(true)}>
+                  <CheckCircle size={13}/> Mark Received
                 </button>
               )}
               <button className="btn btn-secondary" onClick={onClose}>Close</button>
@@ -271,121 +230,192 @@ function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) {
         </div>
       </div>
 
-      {payModal && (
-        <PaymentModal
+      {receiveModal && (
+        <ReceiveModal
           invoice={inv}
-          onClose={() => setPayModal(false)}
-          onSaved={() => { setPayModal(false); load(); onRefresh(); }}
+          onClose={() => setReceive(false)}
+          onSaved={() => { setReceive(false); load(); onRefresh(); }}
         />
       )}
     </>
   );
 }
 
-// ─── InvoiceForm ──────────────────────────────────────────────────────────────
-function InvoiceForm({ wings, onClose, onSaved }) {
+// ─── Invoice Form ─────────────────────────────────────────────────────────────
+function InvoiceForm({ wings, prefill, onClose, onSaved }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
-  const [clients, setClients] = useState([]);
-  const [items, setItems]     = useState([{ ...EMPTY_ITEM }]);
-  const [form, setForm]       = useState({
-    wing_id: wings[0]?.id || '', client_id: '', invoice_number: '',
-    po_number: '', currency_code: 'PKR', exchange_rate: '1', tax_rate: '5',
-    issue_date: new Date().toISOString().split('T')[0], due_date: '', notes: '',
+  const [pos, setPos]       = useState([]);
+
+  const defaultItems = prefill?.line_items?.length
+    ? prefill.line_items
+    : [{ ...EMPTY_ITEM }];
+
+  const [items, setItems] = useState(defaultItems);
+  const [form, setForm]   = useState({
+    wing_id:        prefill?.wing_id        || wings[0]?.id || '',
+    vendor_name:    prefill?.vendor_name    || '',
+    client_name:    prefill?.client_name    || '',
+    invoice_number: prefill?.invoice_number || '',
+    po_id:          '',
+    po_number_ref:  prefill?.po_number_ref  || '',
+    currency:       prefill?.currency       || 'PKR',
+    exchange_rate:  prefill?.exchange_rate  || '1',
+    invoice_date:   prefill?.invoice_date   || new Date().toISOString().split('T')[0],
+    due_date:       prefill?.due_date       || '',
+    tax_amount:     prefill?.tax_amount     || '0',
+    notes:          prefill?.notes          || '',
   });
 
   function f(k) { return (e) => setForm((p) => ({ ...p, [k]: e.target.value })); }
 
+  // Load POs when wing changes
   useEffect(() => {
-    if (form.wing_id) api.get('/clients', { params: { wing_id: form.wing_id } }).then((r) => setClients(r.data)).catch(() => {});
+    if (form.wing_id) {
+      api.get('/purchase-orders', { params: { wing_id: form.wing_id, status: 'Active' } })
+        .then((r) => setPos(r.data)).catch(() => {});
+    }
   }, [form.wing_id]);
 
   function setItem(i, key, val) { setItems((p) => p.map((it, idx) => idx === i ? calcItem(it, key, val) : it)); }
   function addItem()    { setItems((p) => [...p, { ...EMPTY_ITEM }]); }
   function removeItem(i) { setItems((p) => p.filter((_, idx) => idx !== i)); }
 
-  const { subtotal, taxAmt, total } = calcTotals(items, form.tax_rate);
+  const subtotal   = items.reduce((s, i) => s + parseFloat(i.amount || 0), 0);
+  const taxAmt     = parseFloat(form.tax_amount) || 0;
+  const total      = subtotal + taxAmt;
 
   async function submit(e) {
-    e.preventDefault(); setSaving(true);
+    e.preventDefault();
+    if (!form.wing_id) { toast('Please select a Business Wing', 'error'); return; }
+    setSaving(true);
     try {
+      const line_items = items.map((it) => ({
+        description: it.description,
+        notes:       it.notes || '',
+        quantity:    parseFloat(it.quantity) || 1,
+        unit_price:  parseFloat(it.unit_price) || 0,
+        amount:      parseFloat(it.amount) || 0,
+      }));
+
       await api.post('/invoices', {
-        ...form,
-        exchange_rate: parseFloat(form.exchange_rate) || 1,
-        tax_rate: parseFloat(form.tax_rate) || 0,
-        items: items.map((it) => ({
-          description: it.description,
-          notes: it.notes,
-          quantity:   parseFloat(it.quantity)   || 1,
-          unit_price: parseFloat(it.unit_price) || 0,
-          amount:     parseFloat(it.amount)     || 0,
-        })),
+        wing_id:        form.wing_id,
+        po_id:          form.po_id || null,
+        invoice_number: form.invoice_number,
+        vendor_name:    form.vendor_name,
+        client_name:    form.client_name,
+        invoice_date:   form.invoice_date,
+        due_date:       form.due_date || null,
+        currency:       form.currency,
+        exchange_rate:  parseFloat(form.exchange_rate) || 1,
+        total_amount:   total,
+        tax_amount:     taxAmt,
+        line_items,
+        notes: form.notes || (form.po_number_ref ? `PO Ref: ${form.po_number_ref}` : ''),
       });
-      toast('Invoice created', 'success'); onSaved();
-    } catch (err) { toast(err.response?.data?.error || 'Error creating invoice', 'error'); }
+      toast('Invoice saved', 'success'); onSaved();
+    } catch (err) { toast(err.response?.data?.error || 'Error saving invoice', 'error'); }
     finally { setSaving(false); }
   }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 740 }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 760 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>New Invoice</h3>
+          <h3>{prefill ? 'Confirm & Save Extracted Invoice' : 'New Invoice'}</h3>
           <button className="btn btn-secondary btn-sm" onClick={onClose}><X size={14}/></button>
         </div>
+
         <form onSubmit={submit}>
           <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-            {/* Wing + Client */}
+            {/* ── Wing selector — top, prominent ── */}
+            <div style={{ background: 'var(--bg)', borderRadius: 10, padding: '14px 16px', border: '2px solid var(--navy)' }}>
+              <label className="form-label" style={{ color: 'var(--navy)', fontWeight: 700, fontSize: 13 }}>
+                Business Wing *
+              </label>
+              <select className="form-control" required value={form.wing_id} onChange={f('wing_id')}
+                style={{ marginTop: 6, fontWeight: 600 }}>
+                <option value="">— Select Business Wing —</option>
+                {wings.map((w) => <option key={w.id} value={w.id}>{w.name} ({w.code})</option>)}
+              </select>
+            </div>
+
+            {/* Vendor + Client */}
             <div className="grid-2">
-              <div className="form-group"><label className="form-label">Wing *</label>
-                <select className="form-control" required value={form.wing_id} onChange={f('wing_id')}>
-                  <option value="">Select…</option>
-                  {wings.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                </select>
+              <div className="form-group">
+                <label className="form-label">Vendor (From)</label>
+                <input className="form-control" placeholder="e.g. Raheem Solutions (Pvt.) Ltd."
+                  value={form.vendor_name} onChange={f('vendor_name')}/>
               </div>
-              <div className="form-group"><label className="form-label">Client</label>
-                <select className="form-control" value={form.client_id || ''} onChange={f('client_id')}>
-                  <option value="">— None —</option>
-                  {clients.filter((c) => c.type !== 'vendor').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+              <div className="form-group">
+                <label className="form-label">Client / Bill To</label>
+                <input className="form-control" placeholder="e.g. MPDFM LTD — Mr. Zulfiqar"
+                  value={form.client_name} onChange={f('client_name')}/>
               </div>
             </div>
 
-            {/* Invoice # + PO # */}
+            {/* Invoice # + PO link */}
             <div className="grid-2">
-              <div className="form-group"><label className="form-label">Invoice # *</label>
-                <input className="form-control" required value={form.invoice_number} onChange={f('invoice_number')} placeholder="e.g. 1223"/>
+              <div className="form-group">
+                <label className="form-label">Invoice # *</label>
+                <input className="form-control" required placeholder="e.g. 1223"
+                  value={form.invoice_number} onChange={f('invoice_number')}/>
               </div>
-              <div className="form-group"><label className="form-label">PO / SO #</label>
-                <input className="form-control" value={form.po_number} onChange={f('po_number')} placeholder="e.g. 3124240000"/>
+              <div className="form-group">
+                <label className="form-label">Link to PO</label>
+                {pos.length > 0 ? (
+                  <select className="form-control" value={form.po_id} onChange={f('po_id')}>
+                    <option value="">— None / Reference only —</option>
+                    {pos.map((p) => (
+                      <option key={p.id} value={p.id}>{p.po_number} — {formatCurrency(p.po_value, p.currency)}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input className="form-control" placeholder="PO / SO # reference (text)"
+                    value={form.po_number_ref} onChange={f('po_number_ref')}/>
+                )}
+                {pos.length > 0 && (
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    Or store as reference:&nbsp;
+                    <input style={{ fontSize: 12, border: 'none', borderBottom: '1px solid var(--border)', background: 'transparent', width: 140 }}
+                      placeholder="PO/SO text ref" value={form.po_number_ref} onChange={f('po_number_ref')}/>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Dates */}
             <div className="grid-2">
-              <div className="form-group"><label className="form-label">Issue Date *</label>
-                <input type="date" className="form-control" required value={form.issue_date} onChange={f('issue_date')}/>
+              <div className="form-group">
+                <label className="form-label">Invoice Date *</label>
+                <input type="date" className="form-control" required value={form.invoice_date} onChange={f('invoice_date')}/>
               </div>
-              <div className="form-group"><label className="form-label">Due Date</label>
+              <div className="form-group">
+                <label className="form-label">Due Date</label>
                 <input type="date" className="form-control" value={form.due_date} onChange={f('due_date')}/>
               </div>
             </div>
 
             {/* Currency + Tax */}
             <div className="grid-3">
-              <div className="form-group"><label className="form-label">Currency</label>
-                <select className="form-control" value={form.currency_code} onChange={f('currency_code')}>
+              <div className="form-group">
+                <label className="form-label">Currency</label>
+                <select className="form-control" value={form.currency} onChange={f('currency')}>
                   {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
                 </select>
               </div>
-              {form.currency_code !== 'PKR' && (
-                <div className="form-group"><label className="form-label">Exchange Rate → PKR</label>
-                  <input type="number" step="0.0001" className="form-control" value={form.exchange_rate} onChange={f('exchange_rate')}/>
+              {form.currency !== 'PKR' && (
+                <div className="form-group">
+                  <label className="form-label">Exchange Rate → PKR</label>
+                  <input type="number" step="0.0001" className="form-control"
+                    value={form.exchange_rate} onChange={f('exchange_rate')}/>
                 </div>
               )}
-              <div className="form-group"><label className="form-label">Tax %</label>
-                <input type="number" step="0.01" className="form-control" value={form.tax_rate} onChange={f('tax_rate')}/>
+              <div className="form-group">
+                <label className="form-label">Tax Amount</label>
+                <input type="number" step="0.01" className="form-control"
+                  placeholder="e.g. 6066" value={form.tax_amount} onChange={f('tax_amount')}/>
               </div>
             </div>
 
@@ -393,42 +423,44 @@ function InvoiceForm({ wings, onClose, onSaved }) {
             <div>
               <div style={{ fontWeight: 600, marginBottom: 8 }}>Line Items</div>
               {items.map((it, i) => (
-                <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr 1fr 1fr auto', gap: 6, marginBottom: 6, alignItems: 'end' }}>
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr 1fr 1fr auto', gap: 6, marginBottom: 8, alignItems: 'start' }}>
                   <div>
                     <input className="form-control" placeholder="Description *" value={it.description}
                       onChange={(e) => setItem(i, 'description', e.target.value)}/>
-                    <input className="form-control" placeholder="Notes (optional)" value={it.notes} style={{ marginTop: 4, fontSize: 12 }}
+                    <input className="form-control" placeholder="Notes (optional)" value={it.notes || ''}
+                      style={{ marginTop: 4, fontSize: 12 }}
                       onChange={(e) => setItem(i, 'notes', e.target.value)}/>
                   </div>
-                  <input type="number" step="0.001" className="form-control" placeholder="Qty" value={it.quantity}
-                    onChange={(e) => setItem(i, 'quantity', e.target.value)}/>
-                  <input type="number" step="0.01" className="form-control" placeholder="Rate" value={it.unit_price}
-                    onChange={(e) => setItem(i, 'unit_price', e.target.value)}/>
-                  <input type="number" step="0.01" className="form-control" placeholder="Amount" value={it.amount}
-                    onChange={(e) => setItem(i, 'amount', e.target.value)}/>
+                  <input type="number" step="0.001" className="form-control" placeholder="Qty"
+                    value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)}/>
+                  <input type="number" step="0.01" className="form-control" placeholder="Rate"
+                    value={it.unit_price} onChange={(e) => setItem(i, 'unit_price', e.target.value)}/>
+                  <input type="number" step="0.01" className="form-control" placeholder="Amount"
+                    value={it.amount} onChange={(e) => setItem(i, 'amount', e.target.value)}/>
                   <div style={{ fontSize: 13, padding: '8px 4px', fontWeight: 500, color: 'var(--navy)' }}>
-                    {formatCurrency(parseFloat(it.amount) || 0, form.currency_code)}
+                    {formatCurrency(parseFloat(it.amount) || 0, form.currency)}
                   </div>
                   {items.length > 1 && (
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => removeItem(i)}
-                      style={{ padding: '6px 8px' }}><Trash2 size={13}/></button>
+                    <button type="button" className="btn btn-secondary btn-sm"
+                      style={{ padding: '6px 8px', marginTop: 2 }}
+                      onClick={() => removeItem(i)}><Trash2 size={13}/></button>
                   )}
                 </div>
               ))}
-              <button type="button" className="btn btn-secondary btn-sm" onClick={addItem} style={{ marginTop: 4 }}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={addItem}>
                 <Plus size={12}/> Add Line
               </button>
             </div>
 
             {/* Running totals */}
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <div style={{ minWidth: 260, background: 'var(--bg)', borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+              <div style={{ minWidth: 280, background: 'var(--bg)', borderRadius: 10, padding: '12px 16px', fontSize: 13 }}>
                 {[
-                  ['Subtotal',             formatCurrency(subtotal, form.currency_code), false],
-                  [`Tax (${form.tax_rate}%)`, formatCurrency(taxAmt, form.currency_code),  false],
-                  ['Total',                formatCurrency(total,    form.currency_code), true],
+                  ['Subtotal', formatCurrency(subtotal, form.currency), false],
+                  ['Tax',      formatCurrency(taxAmt,   form.currency), false],
+                  ['Total',    formatCurrency(total,    form.currency), true],
                 ].map(([label, value, bold]) => (
-                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontWeight: bold ? 700 : 400, borderTop: bold ? '1px solid var(--border)' : 'none', paddingTop: bold ? 6 : 0 }}>
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontWeight: bold ? 700 : 400, borderTop: bold ? '1px solid var(--border)' : 'none', paddingTop: bold ? 6 : 0, marginTop: bold ? 4 : 0 }}>
                     <span className="text-muted">{label}</span>
                     <span className="font-mono">{value}</span>
                   </div>
@@ -436,14 +468,17 @@ function InvoiceForm({ wings, onClose, onSaved }) {
               </div>
             </div>
 
-            <div className="form-group"><label className="form-label">Notes</label>
+            <div className="form-group">
+              <label className="form-label">Notes</label>
               <textarea className="form-control" rows={2} value={form.notes} onChange={f('notes')}/>
             </div>
           </div>
 
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Create Invoice'}</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Saving…' : prefill ? 'Confirm & Save Invoice' : 'Create Invoice'}
+            </button>
           </div>
         </form>
       </div>
@@ -451,14 +486,33 @@ function InvoiceForm({ wings, onClose, onSaved }) {
   );
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
+// ─── Main Page ────────────────────────────────────────────────────────────────
+// Sample extracted invoice — pre-fills form when user clicks "Import Extracted"
+const EXTRACTED_INVOICE = {
+  vendor_name:    'Raheem Solutions (Pvt.) Ltd.',
+  client_name:    'MPDFM LTD — Mr. Zulfiqar',
+  invoice_number: '1223',
+  po_number_ref:  '3124240000',
+  invoice_date:   '2026-04-27',
+  due_date:       '2026-05-12',
+  currency:       'PKR',
+  exchange_rate:  '1',
+  tax_amount:     '6066',
+  notes:          'NTN: 8262967-4. GST-5 @ 5%.',
+  line_items: [
+    { description: 'Travel Cost',                    notes: 'Travel to ISB',       quantity: 1, unit_price: 35000, amount: '35000' },
+    { description: 'MPDFM Web Portal Retainer Charges', notes: 'Month of March 2022', quantity: 1, unit_price: 75000, amount: '75000' },
+    { description: 'Annual Server Charges',           notes: 'AWS Services',        quantity: 1, unit_price: 11320, amount: '11320' },
+  ],
+};
+
 export default function Invoices() {
   const { activeWing, wings } = useAuth();
   const toast                 = useToast();
-  const [invoices, setInvoices]     = useState([]);
-  const [loading, setLoading]       = useState(true);
+  const [invoices, setInvoices]         = useState([]);
+  const [loading, setLoading]           = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
-  const [modal, setModal]           = useState(null); // null | 'create' | invoiceId
+  const [modal, setModal]               = useState(null); // null | 'create' | 'import' | invoiceId
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -472,8 +526,8 @@ export default function Invoices() {
 
   useEffect(() => { load(); }, [load]);
 
-  const totalOutstanding = invoices.reduce((s, inv) => s + Math.max(0, parseFloat(inv.total) - parseFloat(inv.paid_amount || 0)), 0);
-  const overdueCount     = invoices.filter((i) => i.status === 'overdue').length;
+  const totalPending  = invoices.filter((i) => i.status === 'Pending').reduce((s, i) => s + parseFloat(i.pkr_equivalent || i.total_amount || 0), 0);
+  const overdueCount  = invoices.filter((i) => i.status === 'Overdue').length;
 
   return (
     <div>
@@ -482,12 +536,20 @@ export default function Invoices() {
           <h1>Invoices</h1>
           {invoices.length > 0 && (
             <div style={{ fontSize: 13, marginTop: 2, color: 'var(--text-muted)' }}>
-              {invoices.length} invoices · Outstanding: <strong style={{ color: 'var(--danger)' }}>{formatCurrency(totalOutstanding, 'PKR')}</strong>
+              {invoices.length} invoices
+              {totalPending > 0 && <> · Pending: <strong style={{ color: 'var(--danger)' }}>{formatCurrency(totalPending, 'PKR')}</strong></>}
               {overdueCount > 0 && <span style={{ color: 'var(--danger)', marginLeft: 8 }}>· {overdueCount} overdue</span>}
             </div>
           )}
         </div>
-        <button className="btn btn-primary" onClick={() => setModal('create')}><Plus size={15}/> New Invoice</button>
+        <div className="flex gap-2">
+          <button className="btn btn-secondary" onClick={() => setModal('import')}>
+            <FileText size={15}/> Import Extracted
+          </button>
+          <button className="btn btn-primary" onClick={() => setModal('create')}>
+            <Plus size={15}/> New Invoice
+          </button>
+        </div>
       </div>
 
       {/* Status filters */}
@@ -495,7 +557,7 @@ export default function Invoices() {
         {STATUSES.map((s) => (
           <button key={s} className={`btn btn-sm ${statusFilter === s ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setStatusFilter(s)}>
-            {s === '' ? 'All' : formatStatus(s)}
+            {s === '' ? 'All' : s}
           </button>
         ))}
       </div>
@@ -505,49 +567,47 @@ export default function Invoices() {
           <table className="table">
             <thead>
               <tr>
-                <th>Invoice #</th><th>Client</th><th>Wing</th>
+                <th>Invoice #</th><th>Vendor</th><th>Client</th><th>Wing</th>
                 <th>Date</th><th>Due</th>
                 <th style={{ textAlign: 'right' }}>Total</th>
-                <th style={{ textAlign: 'right' }}>Paid</th>
-                <th style={{ textAlign: 'right' }}>Outstanding</th>
                 <th>Status</th><th></th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} className="text-muted" style={{ textAlign: 'center', padding: 32 }}>Loading…</td></tr>
+                <tr><td colSpan={9} className="text-muted" style={{ textAlign: 'center', padding: 32 }}>Loading…</td></tr>
               ) : invoices.length === 0 ? (
-                <tr><td colSpan={10} className="text-muted" style={{ textAlign: 'center', padding: 32 }}>No invoices found</td></tr>
-              ) : invoices.map((inv) => {
-                const outstanding = parseFloat(inv.total) - parseFloat(inv.paid_amount || 0);
-                return (
-                  <tr key={inv.id} style={{ cursor: 'pointer' }} onClick={() => setModal(inv.id)}>
-                    <td style={{ fontWeight: 600 }}>{inv.invoice_number}</td>
-                    <td>{inv.client_name || <span className="text-muted">—</span>}</td>
-                    <td className="text-muted" style={{ fontSize: 12 }}>{inv.wing_name}</td>
-                    <td className="text-muted">{formatDate(inv.issue_date)}</td>
-                    <td className="text-muted">{formatDate(inv.due_date) || '—'}</td>
-                    <td className="font-mono" style={{ textAlign: 'right' }}>{formatCurrency(inv.total, inv.currency_code)}</td>
-                    <td className="font-mono" style={{ textAlign: 'right', color: 'var(--success)' }}>{formatCurrency(inv.paid_amount || 0, inv.currency_code)}</td>
-                    <td className="font-mono" style={{ textAlign: 'right', color: outstanding > 0 ? 'var(--danger)' : 'var(--success)', fontWeight: outstanding > 0 ? 600 : 400 }}>
-                      {formatCurrency(outstanding, inv.currency_code)}
-                    </td>
-                    <td><span className={`badge ${statusBadgeClass(inv.status)}`}>{formatStatus(inv.status)}</span></td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <button className="btn btn-secondary btn-sm" onClick={() => setModal(inv.id)}><Eye size={13}/></button>
-                    </td>
-                  </tr>
-                );
-              })}
+                <tr><td colSpan={9} className="text-muted" style={{ textAlign: 'center', padding: 32 }}>No invoices found</td></tr>
+              ) : invoices.map((inv) => (
+                <tr key={inv.id} style={{ cursor: 'pointer' }} onClick={() => setModal(inv.id)}>
+                  <td style={{ fontWeight: 600 }}>{inv.invoice_number}</td>
+                  <td style={{ fontSize: 13 }}>{inv.vendor_name || <span className="text-muted">—</span>}</td>
+                  <td style={{ fontSize: 13 }}>{inv.client_name || <span className="text-muted">—</span>}</td>
+                  <td className="text-muted" style={{ fontSize: 12 }}>{inv.wing_name}</td>
+                  <td className="text-muted">{formatDate(inv.invoice_date)}</td>
+                  <td className="text-muted">{formatDate(inv.due_date) || '—'}</td>
+                  <td className="font-mono" style={{ textAlign: 'right' }}>
+                    {formatCurrency(inv.total_amount, inv.currency)}
+                  </td>
+                  <td><span className={`badge ${statusBadgeClass(inv.status)}`}>{inv.status}</span></td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => setModal(inv.id)}><Eye size={13}/></button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       </div>
 
+      {/* Modals */}
       {modal === 'create' && (
         <InvoiceForm wings={wings} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }}/>
       )}
-      {modal && modal !== 'create' && (
+      {modal === 'import' && (
+        <InvoiceForm wings={wings} prefill={EXTRACTED_INVOICE} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }}/>
+      )}
+      {modal && modal !== 'create' && modal !== 'import' && (
         <InvoiceDetail invoiceId={modal} wings={wings} onClose={() => setModal(null)} onRefresh={load}/>
       )}
     </div>

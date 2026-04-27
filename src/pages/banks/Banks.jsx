@@ -143,9 +143,9 @@ export default function Banks() {
       {/* Account cards */}
       <div className="flex gap-3 mb-4" style={{ flexWrap: 'wrap' }}>
         {accounts.map((a) => (
-          <div key={a.id} onClick={() => setSelected(a)} style={{ cursor: 'pointer', minWidth: 200 }}
+          <div key={a.id} onClick={() => setSelected(a)}
             className={`card ${selected?.id === a.id ? 'border-navy' : ''}`}
-            style={{ padding: 16, cursor: 'pointer', border: selected?.id === a.id ? '2px solid var(--navy)' : undefined, minWidth: 200 }}>
+            style={{ padding: 16, cursor: 'pointer', minWidth: 200, border: selected?.id === a.id ? '2px solid var(--navy)' : undefined }}>
             <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>{a.wing_name}</div>
             <div style={{ fontWeight: 600 }}>{a.bank_name}</div>
             <div className="text-muted">{a.account_title}</div>
