@@ -24,6 +24,7 @@ app.use('/api/reminders',     require('./routes/reminders'));
 app.use('/api/dashboard',     require('./routes/dashboard'));
 
 app.get('/api/health', async (_req, res) => {
+  if (!supabase) return res.status(503).json({ status: 'error', db: 'disabled', message: 'Supabase env vars not set' });
   try {
     const { error } = await supabase.from('business_wings').select('id', { count: 'exact', head: true });
     if (error) throw error;
@@ -31,6 +32,17 @@ app.get('/api/health', async (_req, res) => {
   } catch (err) {
     res.status(503).json({ status: 'error', db: 'unreachable', message: err.message });
   }
+});
+
+// Temporary debug route — remove after resolving env var issues
+app.get('/api/debug', (_req, res) => {
+  res.json({
+    node_env:         process.env.NODE_ENV,
+    has_db_url:       !!process.env.POSTGRES_URL_NON_POOLING || !!process.env.DATABASE_URL,
+    has_jwt:          !!process.env.JWT_SECRET,
+    has_supabase_url: !!process.env.SUPABASE_URL,
+    has_supabase_key: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+  });
 });
 
 // Global error handler — catches any thrown errors or next(err) calls
