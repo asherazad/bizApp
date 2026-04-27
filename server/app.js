@@ -36,9 +36,12 @@ app.get('/api/health', async (_req, res) => {
 
 // Temporary debug route — remove after resolving env var issues
 app.get('/api/debug', (_req, res) => {
+  const dbUrl = process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL || process.env.DATABASE_URL || '';
+  let dbHost = 'not set';
+  try { dbHost = new URL(dbUrl).hostname; } catch {}
   res.json({
     node_env:         process.env.NODE_ENV,
-    has_db_url:       !!process.env.POSTGRES_URL_NON_POOLING || !!process.env.DATABASE_URL,
+    db_host:          dbHost,
     has_jwt:          !!process.env.JWT_SECRET,
     has_supabase_url: !!process.env.SUPABASE_URL,
     has_supabase_key: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
