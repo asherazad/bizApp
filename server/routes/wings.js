@@ -8,7 +8,7 @@ router.get('/', async (req, res) => {
   try {
     let query = db('business_wings').orderBy('name');
     if (req.user.role !== 'admin') {
-      const wingIds = await db('wing_access_grants').where('user_id', req.user.id).pluck('wing_id');
+      const wingIds = await db('wing_access_grants').where('user_id', req.user.id).pluck('business_wing_id');
       query = query.whereIn('id', wingIds);
     }
     const wings = await query;
@@ -73,7 +73,7 @@ router.get('/:id/users', requireAdmin, async (req, res) => {
   try {
     const users = await db('wing_access_grants')
       .join('users', 'users.id', 'wing_access_grants.user_id')
-      .where('wing_access_grants.wing_id', req.params.id)
+      .where('wing_access_grants.business_wing_id', req.params.id)
       .select('users.id', 'users.name', 'users.email', 'users.role');
     res.json(users);
   } catch (err) {

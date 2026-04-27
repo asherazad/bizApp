@@ -16,7 +16,7 @@ router.post('/login', async (req, res) => {
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
     const wings = await db('wing_access_grants')
-      .join('business_wings', 'business_wings.id', 'wing_access_grants.wing_id')
+      .join('business_wings', 'business_wings.id', 'wing_access_grants.business_wing_id')
       .where('wing_access_grants.user_id', user.id)
       .where('business_wings.is_active', true)
       .select('business_wings.id', 'business_wings.name', 'business_wings.code');
@@ -40,7 +40,7 @@ router.get('/me', authenticate, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const wings = await db('wing_access_grants')
-      .join('business_wings', 'business_wings.id', 'wing_access_grants.wing_id')
+      .join('business_wings', 'business_wings.id', 'wing_access_grants.business_wing_id')
       .where('wing_access_grants.user_id', user.id)
       .where('business_wings.is_active', true)
       .select('business_wings.id', 'business_wings.name', 'business_wings.code');
