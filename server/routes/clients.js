@@ -6,14 +6,13 @@ router.use(authenticate);
 
 router.get('/', async (req, res) => {
   try {
-    const { wing_id, type, search } = req.query;
+    const { wing_id, search } = req.query;
     let q = db('clients').orderBy('name');
-    if (wing_id) q = q.where('wing_id', wing_id);
-    if (type)    q = q.where('type', type);
+    if (wing_id) q = q.where('business_wing_id', wing_id);
     if (search)  q = q.whereRaw('name ILIKE ?', [`%${search}%`]);
     res.json(await q);
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
@@ -29,20 +28,22 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { wing_id, name, email, phone, address, ntn, strn, type } = req.body;
+    const { wing_id, name, contact_person, email, phone, address } = req.body;
     if (!wing_id || !name) return res.status(400).json({ error: 'wing_id and name are required' });
-    const [client] = await db('clients').insert({ wing_id, name, email, phone, address, ntn, strn, type: type || 'client' }).returning('*');
+    const [client] = await db('clients')
+      .insert({ business_wing_id: wing_id, name, contact_person, email, phone, address })
+      .returning('*');
     res.status(201).json(client);
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
 router.put('/:id', async (req, res) => {
   try {
-    const { name, email, phone, address, ntn, strn, type, is_active } = req.body;
+    const { name, contact_person, email, phone, address, is_active } = req.body;
     const [client] = await db('clients').where({ id: req.params.id })
-      .update({ name, email, phone, address, ntn, strn, type, is_active, updated_at: new Date() })
+      .update({ name, contact_person, email, phone, address, is_active })
       .returning('*');
     if (!client) return res.status(404).json({ error: 'Not found' });
     res.json(client);

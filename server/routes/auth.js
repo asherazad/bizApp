@@ -22,12 +22,12 @@ router.post('/login', async (req, res) => {
       .select('business_wings.id', 'business_wings.name', 'business_wings.code');
 
     const token = jwt.sign(
-      { id: user.id, name: user.name, email: user.email, role: user.role },
+      { id: user.id, name: user.full_name, email: user.email, role: user.role },
       JWT_SECRET,
       { expiresIn: '8h' }
     );
 
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role }, wings });
+    res.json({ token, user: { id: user.id, name: user.full_name, email: user.email, role: user.role }, wings });
   } catch (err) {
     console.error('login error', err);
     res.status(500).json({ error: 'Server error', detail: err.message });
@@ -36,7 +36,8 @@ router.post('/login', async (req, res) => {
 
 router.get('/me', authenticate, async (req, res) => {
   try {
-    const user = await db('users').where({ id: req.user.id }).select('id','name','email','role','is_active').first();
+    const user = await db('users').where({ id: req.user.id })
+      .select('id', 'full_name', 'email', 'role', 'is_active').first();
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const wings = await db('wing_access_grants')
@@ -45,7 +46,7 @@ router.get('/me', authenticate, async (req, res) => {
       .where('business_wings.is_active', true)
       .select('business_wings.id', 'business_wings.name', 'business_wings.code');
 
-    res.json({ ...user, wings });
+    res.json({ ...user, name: user.full_name, wings });
   } catch (err) {
     console.error('me error', err);
     res.status(500).json({ error: 'Server error' });
@@ -63,7 +64,7 @@ router.post('/change-password', authenticate, async (req, res) => {
     if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
 
     const hash = await bcrypt.hash(new_password, 10);
-    await db('users').where({ id: req.user.id }).update({ password_hash: hash, updated_at: new Date() });
+    await db('users').where({ id: req.user.id }).update({ password_hash: hash });
     res.json({ message: 'Password updated' });
   } catch (err) {
     console.error('change-password error', err);

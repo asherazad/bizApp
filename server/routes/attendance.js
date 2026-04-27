@@ -7,42 +7,42 @@ router.use(authenticate);
 router.get('/', async (req, res) => {
   try {
     const { wing_id, resource_id, from, to, status } = req.query;
-    let q = db('attendance')
-      .join('resources', 'resources.id', 'attendance.resource_id')
-      .select('attendance.*', 'resources.name as resource_name')
-      .orderBy('attendance.date', 'desc');
-    if (wing_id)     q = q.where('attendance.wing_id', wing_id);
-    if (resource_id) q = q.where('attendance.resource_id', resource_id);
-    if (status)      q = q.where('attendance.status', status);
-    if (from)        q = q.where('attendance.date', '>=', from);
-    if (to)          q = q.where('attendance.date', '<=', to);
+    let q = db('attendance_records')
+      .join('resources', 'resources.id', 'attendance_records.resource_id')
+      .select('attendance_records.*', 'resources.full_name as resource_name', 'resources.business_wing_id')
+      .orderBy('attendance_records.record_date', 'desc');
+    if (wing_id)     q = q.where('resources.business_wing_id', wing_id);
+    if (resource_id) q = q.where('attendance_records.resource_id', resource_id);
+    if (status)      q = q.where('attendance_records.status', status);
+    if (from)        q = q.where('attendance_records.record_date', '>=', from);
+    if (to)          q = q.where('attendance_records.record_date', '<=', to);
     res.json(await q);
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
 router.post('/', async (req, res) => {
   try {
-    const { resource_id, wing_id, date, check_in, check_out, status, overtime_hours, notes } = req.body;
-    if (!resource_id || !wing_id || !date) return res.status(400).json({ error: 'resource_id, wing_id, date required' });
-    const [row] = await db('attendance').insert({
-      resource_id, wing_id, date, check_in, check_out,
-      status: status || 'present',
-      overtime_hours: overtime_hours || 0, notes,
+    const { resource_id, record_date, status, leave_type, check_in, check_out, notes } = req.body;
+    if (!resource_id || !record_date || !status) {
+      return res.status(400).json({ error: 'resource_id, record_date, status required' });
+    }
+    const [row] = await db('attendance_records').insert({
+      resource_id, record_date, status, leave_type, check_in, check_out, notes,
     }).returning('*');
     res.status(201).json(row);
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Attendance already recorded for this date' });
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
 router.put('/:id', async (req, res) => {
   try {
-    const { check_in, check_out, status, overtime_hours, notes } = req.body;
-    const [row] = await db('attendance').where({ id: req.params.id })
-      .update({ check_in, check_out, status, overtime_hours, notes, updated_at: new Date() })
+    const { status, leave_type, check_in, check_out, notes } = req.body;
+    const [row] = await db('attendance_records').where({ id: req.params.id })
+      .update({ status, leave_type, check_in, check_out, notes })
       .returning('*');
     if (!row) return res.status(404).json({ error: 'Not found' });
     res.json(row);
@@ -51,46 +51,27 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Leave requests
-router.get('/leaves', async (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    const { wing_id, resource_id, status } = req.query;
-    let q = db('leave_requests')
-      .join('resources', 'resources.id', 'leave_requests.resource_id')
-      .select('leave_requests.*', 'resources.name as resource_name')
-      .orderBy('leave_requests.start_date', 'desc');
-    if (wing_id)     q = q.where('leave_requests.wing_id', wing_id);
-    if (resource_id) q = q.where('leave_requests.resource_id', resource_id);
-    if (status)      q = q.where('leave_requests.status', status);
+    const n = await db('attendance_records').where({ id: req.params.id }).delete();
+    if (!n) return res.status(404).json({ error: 'Not found' });
+    res.json({ message: 'Deleted' });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── Leave Balances ───────────────────────────────────────────────────────────
+
+router.get('/leave-balances', async (req, res) => {
+  try {
+    const { resource_id, year } = req.query;
+    let q = db('leave_balances')
+      .join('resources', 'resources.id', 'leave_balances.resource_id')
+      .select('leave_balances.*', 'resources.full_name as resource_name');
+    if (resource_id) q = q.where('leave_balances.resource_id', resource_id);
+    if (year)        q = q.where('leave_balances.year', year);
     res.json(await q);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.post('/leaves', async (req, res) => {
-  try {
-    const { resource_id, wing_id, leave_type, start_date, end_date, days, reason } = req.body;
-    if (!resource_id || !wing_id || !leave_type || !start_date || !end_date) {
-      return res.status(400).json({ error: 'Required fields missing' });
-    }
-    const [lr] = await db('leave_requests').insert({
-      resource_id, wing_id, leave_type, start_date, end_date,
-      days: days || 1, reason,
-    }).returning('*');
-    res.status(201).json(lr);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.put('/leaves/:id', async (req, res) => {
-  try {
-    const { status, notes } = req.body;
-    const [lr] = await db('leave_requests').where({ id: req.params.id })
-      .update({ status, notes, updated_at: new Date() }).returning('*');
-    if (!lr) return res.status(404).json({ error: 'Not found' });
-    res.json(lr);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }

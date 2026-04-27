@@ -6,26 +6,28 @@ router.use(authenticate);
 
 router.get('/', async (req, res) => {
   try {
-    const { wing_id, is_active } = req.query;
+    const { wing_id, status } = req.query;
     let q = db('subscriptions')
-      .leftJoin('business_wings', 'business_wings.id', 'subscriptions.wing_id')
+      .leftJoin('business_wings', 'business_wings.id', 'subscriptions.business_wing_id')
       .select('subscriptions.*', 'business_wings.name as wing_name')
-      .orderBy('subscriptions.next_billing_date');
-    if (wing_id)   q = q.where('subscriptions.wing_id', wing_id);
-    if (is_active !== undefined) q = q.where('subscriptions.is_active', is_active === 'true');
+      .orderBy('subscriptions.next_renewal_date');
+    if (wing_id) q = q.where('subscriptions.business_wing_id', wing_id);
+    if (status)  q = q.where('subscriptions.status', status);
     res.json(await q);
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
 router.get('/upcoming', async (req, res) => {
   try {
-    const upcoming = await db('subscriptions')
-      .where('is_active', true)
-      .where('next_billing_date', '<=', db.raw("CURRENT_DATE + INTERVAL '30 days'"))
-      .orderBy('next_billing_date');
-    res.json(upcoming);
+    const { wing_id } = req.query;
+    let q = db('subscriptions')
+      .where('status', 'Active')
+      .where('next_renewal_date', '<=', db.raw("CURRENT_DATE + INTERVAL '30 days'"))
+      .orderBy('next_renewal_date');
+    if (wing_id) q = q.where('business_wing_id', wing_id);
+    res.json(await q);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -33,27 +35,31 @@ router.get('/upcoming', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { wing_id, service_name, description, amount, currency_code, exchange_rate, billing_cycle, next_billing_date, bank_account_id, notes } = req.body;
-    if (!wing_id || !service_name || !amount || !next_billing_date) return res.status(400).json({ error: 'Required fields missing' });
-    const rate = parseFloat(exchange_rate) || 1;
-    const amt  = parseFloat(amount);
-    const pkr  = (currency_code === 'PKR') ? amt : amt * rate;
+    const { wing_id, service_name, vendor, amount, currency, billing_cycle, start_date, next_renewal_date, bank_account_id, payment_method, reminder_days_before, notes } = req.body;
+    if (!wing_id || !service_name || !amount || !next_renewal_date) {
+      return res.status(400).json({ error: 'wing_id, service_name, amount, next_renewal_date required' });
+    }
     const [sub] = await db('subscriptions').insert({
-      wing_id, service_name, description, amount: amt,
-      currency_code: currency_code || 'PKR', exchange_rate: rate, pkr_amount: pkr,
-      billing_cycle: billing_cycle || 'monthly', next_billing_date, bank_account_id, notes,
+      business_wing_id: wing_id,
+      service_name, vendor, amount: parseFloat(amount),
+      currency: currency || 'USD',
+      billing_cycle: billing_cycle || 'Monthly',
+      start_date, next_renewal_date,
+      bank_account_id, payment_method,
+      reminder_days_before: reminder_days_before || 7,
+      notes,
     }).returning('*');
     res.status(201).json(sub);
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
 router.put('/:id', async (req, res) => {
   try {
-    const { service_name, amount, next_billing_date, is_active, notes } = req.body;
+    const { service_name, amount, next_renewal_date, status, bank_account_id, notes } = req.body;
     const [sub] = await db('subscriptions').where({ id: req.params.id })
-      .update({ service_name, amount, next_billing_date, is_active, notes, updated_at: new Date() })
+      .update({ service_name, amount, next_renewal_date, status, bank_account_id, notes })
       .returning('*');
     if (!sub) return res.status(404).json({ error: 'Not found' });
     res.json(sub);

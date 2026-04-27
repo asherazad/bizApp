@@ -48,7 +48,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
   try {
     const { name, code, description, is_active } = req.body;
     const [wing] = await db('business_wings').where({ id: req.params.id })
-      .update({ name, code: code?.toUpperCase(), description, is_active, updated_at: new Date() })
+      .update({ name, code: code?.toUpperCase(), description, is_active })
       .returning('*');
     if (!wing) return res.status(404).json({ error: 'Wing not found' });
     res.json(wing);
