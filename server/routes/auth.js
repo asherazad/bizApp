@@ -15,9 +15,9 @@ router.post('/login', async (req, res) => {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const wings = await db('user_wings')
-      .join('business_wings', 'business_wings.id', 'user_wings.wing_id')
-      .where('user_wings.user_id', user.id)
+    const wings = await db('wing_access_grants')
+      .join('business_wings', 'business_wings.id', 'wing_access_grants.wing_id')
+      .where('wing_access_grants.user_id', user.id)
       .where('business_wings.is_active', true)
       .select('business_wings.id', 'business_wings.name', 'business_wings.code');
 
@@ -39,9 +39,9 @@ router.get('/me', authenticate, async (req, res) => {
     const user = await db('users').where({ id: req.user.id }).select('id','name','email','role','is_active').first();
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const wings = await db('user_wings')
-      .join('business_wings', 'business_wings.id', 'user_wings.wing_id')
-      .where('user_wings.user_id', user.id)
+    const wings = await db('wing_access_grants')
+      .join('business_wings', 'business_wings.id', 'wing_access_grants.wing_id')
+      .where('wing_access_grants.user_id', user.id)
       .where('business_wings.is_active', true)
       .select('business_wings.id', 'business_wings.name', 'business_wings.code');
 

@@ -22,7 +22,7 @@ router.post('/', async (req, res) => {
     const user = await db.transaction(async (trx) => {
       const [u] = await trx('users').insert({ name, email: email.toLowerCase(), password_hash: hash, role: role || 'viewer' }).returning('*');
       if (wing_ids.length) {
-        await trx('user_wings').insert(wing_ids.map((wid) => ({ user_id: u.id, wing_id: wid })));
+        await trx('wing_access_grants').insert(wing_ids.map((wid) => ({ user_id: u.id, wing_id: wid })));
       }
       return u;
     });
@@ -41,9 +41,9 @@ router.put('/:id', async (req, res) => {
       const [u] = await trx('users').where({ id: req.params.id })
         .update({ name, role, is_active, updated_at: new Date() }).returning('*');
       if (wing_ids !== undefined) {
-        await trx('user_wings').where({ user_id: req.params.id }).delete();
+        await trx('wing_access_grants').where({ user_id: req.params.id }).delete();
         if (wing_ids.length) {
-          await trx('user_wings').insert(wing_ids.map((wid) => ({ user_id: req.params.id, wing_id: wid })));
+          await trx('wing_access_grants').insert(wing_ids.map((wid) => ({ user_id: req.params.id, wing_id: wid })));
         }
       }
       return u;
