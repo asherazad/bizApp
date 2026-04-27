@@ -16,6 +16,7 @@
     "db:migrate:prod": "cd server && NODE_ENV=production npx knex migrate:latest"
   },
   "dependencies": {
+    "@fontsource/manrope": "^5.2.8",
     "axios": "^1.7.2",
     "bcryptjs": "^2.4.3",
     "concurrently": "^8.2.2",

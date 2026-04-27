@@ -17,8 +17,8 @@ function calcItem(item, key, val) {
   return next;
 }
 
-// ─── PDF Text Extraction ──────────────────────────────────────────────────────
-async function extractTextFromPDF(file) {
+// ─── PDF Extraction ───────────────────────────────────────────────────────────
+async function extractFromPDF(file) {
   const pdfjsLib = await import('pdfjs-dist');
   pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
     'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -27,99 +27,186 @@ async function extractTextFromPDF(file) {
 
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  let fullText = '';
+
+  // Collect all text items with position across all pages
+  const allItems = [];
+  let pageYOffset = 0;
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
+    const vp = page.getViewport({ scale: 1 });
     const content = await page.getTextContent();
-    fullText += content.items.map((i) => i.str).join(' ') + '\n';
+    for (const item of content.items) {
+      if (!item.str?.trim()) continue;
+      allItems.push({
+        str:  item.str,
+        x:    Math.round(item.transform[4]),
+        y:    Math.round(pageYOffset + vp.height - item.transform[5]), // flip y so top=0
+        w:    Math.round(item.width),
+        h:    Math.round(item.height),
+      });
+    }
+    pageYOffset += vp.height + 20;
   }
-  return fullText;
-}
 
-function parseInvoiceText(text) {
-  const get = (patterns) => {
+  // Sort top-to-bottom, left-to-right
+  allItems.sort((a, b) => a.y !== b.y ? a.y - b.y : a.x - b.x);
+
+  // Group items into lines by Y proximity (within 4px = same row)
+  const lines = [];
+  for (const item of allItems) {
+    const last = lines[lines.length - 1];
+    if (last && Math.abs(item.y - last.y) <= 4) {
+      last.items.push(item);
+      last.text += ' ' + item.str;
+    } else {
+      lines.push({ y: item.y, items: [item], text: item.str });
+    }
+  }
+
+  const fullText = lines.map((l) => l.text).join('\n');
+
+  // ── Helpers ──
+  function get(patterns, src = fullText) {
     for (const re of patterns) {
-      const m = text.match(re);
+      const m = src.match(re);
       if (m) return m[1]?.trim();
     }
     return '';
-  };
+  }
 
-  // Parse date strings like "27 April 2026" or "27/04/2026" → YYYY-MM-DD
   function parseDate(str) {
     if (!str) return '';
     const months = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
-    // "27 April 2026" / "27th April 2026"
     const m1 = str.match(/(\d{1,2})(?:st|nd|rd|th)?\s+(\w+)\s+(\d{4})/i);
     if (m1) {
       const mo = months[m1[2].slice(0,3).toLowerCase()];
       if (mo) return `${m1[3]}-${String(mo).padStart(2,'0')}-${m1[1].padStart(2,'0')}`;
     }
-    // "04/27/2026" or "27/04/2026"
     const m2 = str.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
     if (m2) return `${m2[3]}-${m2[2].padStart(2,'0')}-${m2[1].padStart(2,'0')}`;
     return '';
   }
 
+  function cleanNum(s) { return parseFloat(String(s).replace(/,/g, '')) || 0; }
+
+  // ── Scalar fields ──
   const invoice_number = get([
-    /invoice\s*(?:no\.?|number|#)[:\s#]*([A-Z0-9\-]+)/i,
-    /inv[\s\-#:]*([A-Z0-9\-]+)/i,
+    /invoice\s*(?:no\.?|number|#)\s*[:\-]?\s*([A-Z0-9\-]+)/i,
+    /\binv[oice]*\s*#?\s*[:\-]?\s*([0-9]+)/i,
   ]);
 
-  const rawDate = get([
-    /(?:invoice\s+)?date[:\s]+([^\n\r,;]+)/i,
-    /dated?[:\s]+([^\n\r,;]+)/i,
-  ]);
-  const invoice_date = parseDate(rawDate);
+  const invoice_date = parseDate(get([
+    /(?:invoice\s+)?date\s*[:\-]\s*([^\n\r]+)/i,
+    /dated?\s*[:\-]\s*([^\n\r]+)/i,
+  ]));
 
-  const rawDue = get([
-    /due\s+date[:\s]+([^\n\r,;]+)/i,
-    /payment\s+due[:\s]+([^\n\r,;]+)/i,
-  ]);
-  const due_date = parseDate(rawDue);
+  const due_date = parseDate(get([
+    /due\s+date\s*[:\-]\s*([^\n\r]+)/i,
+    /payment\s+due\s*[:\-]\s*([^\n\r]+)/i,
+    /due\s*[:\-]\s*([^\n\r]+)/i,
+  ]));
 
   const vendor_name = get([
-    /from[:\s]+([^\n\r]+)/i,
-    /(?:bill(?:ed)?\s+)?(?:from|by)[:\s]+([^\n\r]+)/i,
+    /(?:from|issued\s+by|billed\s+by)\s*[:\-]\s*([^\n\r]+)/i,
   ]);
 
   const client_name = get([
-    /bill(?:ed)?\s+to[:\s]+([^\n\r]+)/i,
-    /(?:to|attn)[:\s]+([^\n\r]+)/i,
-    /client[:\s]+([^\n\r]+)/i,
+    /bill(?:ed)?\s+to\s*[:\-]?\s*([^\n\r]+)/i,
+    /(?:to|attn\.?)\s*[:\-]\s*([^\n\r]+)/i,
+    /client\s*[:\-]\s*([^\n\r]+)/i,
   ]);
 
   const po_number_ref = get([
-    /(?:po|purchase\s+order)\s*(?:no\.?|number|#)?[:\s#]*([A-Z0-9\-]+)/i,
-    /order\s*(?:no|number|#)[:\s]*([A-Z0-9\-]+)/i,
+    /(?:po|purchase\s*order|p\.o\.)\s*(?:no\.?|number|#)?\s*[:\-]?\s*([A-Z0-9\-]+)/i,
+    /order\s*(?:no|number|#)\s*[:\-]\s*([A-Z0-9\-]+)/i,
   ]);
 
-  // Currency
-  const currMatch = text.match(/\b(USD|EUR|GBP|AED|PKR)\b/);
+  const currMatch = fullText.match(/\b(USD|EUR|GBP|AED|PKR)\b/);
   const currency = currMatch ? currMatch[1] : 'PKR';
 
-  // Tax
-  const taxMatch = text.match(/(?:tax|gst|vat|sts)[^\d]*([0-9,]+(?:\.\d{1,2})?)/i);
-  const tax_amount = taxMatch ? taxMatch[1].replace(/,/g, '') : '0';
+  const taxMatch = fullText.match(/(?:tax|gst|vat|sts)[^\d\n]{0,20}([\d,]+(?:\.\d{1,2})?)/i);
+  const tax_amount = taxMatch ? String(cleanNum(taxMatch[1])) : '0';
 
-  // NTN/notes
-  const ntnMatch = text.match(/ntn[:\s]*([0-9\-]+)/i);
+  const ntnMatch = fullText.match(/ntn\s*[:\-]?\s*([\d\-]+)/i);
   const notes = ntnMatch ? `NTN: ${ntnMatch[1]}` : '';
 
-  // Line items — look for patterns like "Description  Qty  Rate  Amount"
+  // ── Line items via position analysis ──
+  // Find the header row that contains "description"/"particulars" and amount-like headers
+  const headerIdx = lines.findIndex((l) =>
+    /description|particulars|item|detail/i.test(l.text) &&
+    /(?:amount|total|rate|price|qty|quantity)/i.test(l.text)
+  );
+
   const line_items = [];
-  // Try to extract rows: text followed by number patterns
-  const lineRe = /([A-Za-z][^\d\n]{5,60?})\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)/g;
-  let m;
-  while ((m = lineRe.exec(text)) !== null) {
-    const desc = m[1].trim();
-    const qty  = parseFloat(m[2].replace(/,/g,''));
-    const rate = parseFloat(m[3].replace(/,/g,''));
-    const amt  = parseFloat(m[4].replace(/,/g,''));
-    // Skip header-like rows and tax rows
-    if (/total|subtotal|tax|gst|vat|balance|amount/i.test(desc) && qty < 2) continue;
-    if (desc.length < 4) continue;
-    line_items.push({ description: desc, notes: '', quantity: qty || 1, unit_price: rate || amt, amount: String(amt || rate) });
+
+  if (headerIdx >= 0) {
+    const headerLine = lines[headerIdx];
+    // Map column headers to X positions
+    const colMap = {};
+    for (const item of headerLine.items) {
+      const key = item.str.trim().toLowerCase();
+      if (/desc|particular|item|detail/i.test(key)) colMap.desc = item.x;
+      else if (/qty|quantity|nos/i.test(key))        colMap.qty  = item.x;
+      else if (/rate|price|unit/i.test(key))         colMap.rate = item.x;
+      else if (/amount|total/i.test(key))            colMap.amt  = item.x;
+    }
+
+    // Scan rows below header until we hit a total/subtotal row
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^\s*(?:sub\s*total|total|grand\s*total|tax|gst|vat|balance\s*due|amount\s*due)\s*$/i.test(line.text.trim())) break;
+      if (/(?:sub\s*total|grand\s*total)\b/i.test(line.text)) break;
+
+      // Split this row's items into columns by X position relative to header columns
+      let desc = '', qty = '', rate = '', amt = '';
+      for (const it of line.items) {
+        const xDiff = Object.entries(colMap).map(([k, cx]) => ({ k, d: Math.abs(it.x - cx) }))
+          .sort((a, b) => a.d - b.d)[0];
+        if (!xDiff || xDiff.d > 80) {
+          // No column header nearby — likely part of description
+          desc += (desc ? ' ' : '') + it.str;
+        } else {
+          if (xDiff.k === 'desc') desc += (desc ? ' ' : '') + it.str;
+          else if (xDiff.k === 'qty')  qty  = it.str;
+          else if (xDiff.k === 'rate') rate = it.str;
+          else if (xDiff.k === 'amt')  amt  = it.str;
+        }
+      }
+
+      desc = desc.trim();
+      if (!desc || desc.length < 3) continue;
+      // Skip rows that look like labels not items
+      if (/^(?:sr\.?|s\.?no\.?|#)$/i.test(desc)) continue;
+
+      const qtyN  = cleanNum(qty)  || 1;
+      const rateN = cleanNum(rate);
+      const amtN  = cleanNum(amt)  || cleanNum(rate);
+
+      line_items.push({
+        description: desc,
+        notes:       '',
+        quantity:    qtyN,
+        unit_price:  rateN || amtN,
+        amount:      String(amtN || rateN),
+      });
+    }
+  }
+
+  // Fallback: if no header found or no items extracted, try pattern matching on lines
+  if (line_items.length === 0) {
+    for (const line of lines) {
+      // Look for lines with at least one number that could be an amount
+      const nums = [...line.text.matchAll(/([\d,]+(?:\.\d{1,2})?)/g)]
+        .map((m) => cleanNum(m[1])).filter((n) => n > 0);
+      if (nums.length === 0) continue;
+      const textPart = line.text.replace(/([\d,]+(?:\.\d{1,2})?)/g, '').replace(/\s+/g, ' ').trim();
+      if (textPart.length < 4) continue;
+      if (/total|subtotal|tax|gst|vat|balance|amount\s*due|invoice/i.test(textPart)) continue;
+      const amt = nums[nums.length - 1];
+      const rate = nums.length >= 2 ? nums[nums.length - 2] : amt;
+      const qty = nums.length >= 3 ? nums[0] : 1;
+      line_items.push({ description: textPart, notes: '', quantity: qty, unit_price: rate, amount: String(amt) });
+    }
   }
 
   return { invoice_number, invoice_date, due_date, vendor_name, client_name, po_number_ref, currency, tax_amount, notes, line_items };
@@ -626,8 +713,7 @@ export default function Invoices() {
     e.target.value = '';
     setExtracting(true);
     try {
-      const text = await extractTextFromPDF(file);
-      const extracted = parseInvoiceText(text);
+      const extracted = await extractFromPDF(file);
       setPrefill(extracted);
       setModal('import');
     } catch (err) {
