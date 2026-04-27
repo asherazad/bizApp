@@ -1,5 +1,6 @@
-const express = require('express');
-const cors    = require('cors');
+const express   = require('express');
+const cors      = require('cors');
+const supabase  = require('./supabaseClient');
 
 const app = express();
 app.use(cors());
@@ -22,7 +23,15 @@ app.use('/api/subscriptions', require('./routes/subscriptions'));
 app.use('/api/reminders',     require('./routes/reminders'));
 app.use('/api/dashboard',     require('./routes/dashboard'));
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));
+app.get('/api/health', async (_req, res) => {
+  try {
+    const { error } = await supabase.from('business_wings').select('id', { count: 'exact', head: true });
+    if (error) throw error;
+    res.json({ status: 'ok', db: 'connected', ts: new Date() });
+  } catch (err) {
+    res.status(503).json({ status: 'error', db: 'unreachable', message: err.message });
+  }
+});
 
 // Global error handler — catches any thrown errors or next(err) calls
 app.use((err, req, res, next) => {
