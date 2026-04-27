@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import api from '../lib/api';
 
 const AuthContext = createContext(null);
@@ -14,6 +14,17 @@ export function AuthProvider({ children }) {
     const wings = JSON.parse(localStorage.getItem('nexus_wings') || '[]');
     return wings[0] || null;
   });
+
+  // Refresh wings from server on mount (handles stale localStorage)
+  useEffect(() => {
+    if (!localStorage.getItem('nexus_token')) return;
+    api.get('/auth/me').then(({ data }) => {
+      const fresh = data.wings || [];
+      localStorage.setItem('nexus_wings', JSON.stringify(fresh));
+      setWings(fresh);
+      setActiveWing((prev) => prev || fresh[0] || null);
+    }).catch(() => {});
+  }, []);
 
   const login = useCallback(async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });

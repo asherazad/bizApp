@@ -15,11 +15,17 @@ router.post('/login', async (req, res) => {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const wings = await db('wing_access_grants')
-      .join('business_wings', 'business_wings.id', 'wing_access_grants.business_wing_id')
-      .where('wing_access_grants.user_id', user.id)
-      .where('business_wings.is_active', true)
-      .select('business_wings.id', 'business_wings.name', 'business_wings.code');
+    let wings;
+    if (user.role === 'admin') {
+      wings = await db('business_wings').where('is_active', true)
+        .select('id', 'name', 'code').orderBy('name');
+    } else {
+      wings = await db('wing_access_grants')
+        .join('business_wings', 'business_wings.id', 'wing_access_grants.business_wing_id')
+        .where('wing_access_grants.user_id', user.id)
+        .where('business_wings.is_active', true)
+        .select('business_wings.id', 'business_wings.name', 'business_wings.code');
+    }
 
     const token = jwt.sign(
       { id: user.id, name: user.full_name, email: user.email, role: user.role },
@@ -40,11 +46,17 @@ router.get('/me', authenticate, async (req, res) => {
       .select('id', 'full_name', 'email', 'role', 'is_active').first();
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const wings = await db('wing_access_grants')
-      .join('business_wings', 'business_wings.id', 'wing_access_grants.business_wing_id')
-      .where('wing_access_grants.user_id', user.id)
-      .where('business_wings.is_active', true)
-      .select('business_wings.id', 'business_wings.name', 'business_wings.code');
+    let wings;
+    if (user.role === 'admin') {
+      wings = await db('business_wings').where('is_active', true)
+        .select('id', 'name', 'code').orderBy('name');
+    } else {
+      wings = await db('wing_access_grants')
+        .join('business_wings', 'business_wings.id', 'wing_access_grants.business_wing_id')
+        .where('wing_access_grants.user_id', user.id)
+        .where('business_wings.is_active', true)
+        .select('business_wings.id', 'business_wings.name', 'business_wings.code');
+    }
 
     res.json({ ...user, name: user.full_name, wings });
   } catch (err) {

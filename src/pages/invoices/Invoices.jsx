@@ -1,9 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { formatCurrency, formatDate, formatStatus, statusBadgeClass } from '../../lib/format';
-import { Plus, Eye, CheckCircle, X, Trash2, FileText } from 'lucide-react';
+import { Plus, Eye, CheckCircle, X, Trash2, Upload } from 'lucide-react';
 
 const CURRENCIES = ['PKR', 'USD', 'EUR', 'AED', 'GBP'];
 const STATUSES   = ['', 'Pending', 'Received', 'Overdue', 'Disputed'];
@@ -15,6 +15,114 @@ function calcItem(item, key, val) {
     next.amount = (parseFloat(next.unit_price || 0) * parseFloat(next.quantity || 1)).toFixed(2);
   }
   return next;
+}
+
+// ─── PDF Text Extraction ──────────────────────────────────────────────────────
+async function extractTextFromPDF(file) {
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.min.mjs',
+    import.meta.url,
+  ).toString();
+
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = '';
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    fullText += content.items.map((i) => i.str).join(' ') + '\n';
+  }
+  return fullText;
+}
+
+function parseInvoiceText(text) {
+  const get = (patterns) => {
+    for (const re of patterns) {
+      const m = text.match(re);
+      if (m) return m[1]?.trim();
+    }
+    return '';
+  };
+
+  // Parse date strings like "27 April 2026" or "27/04/2026" → YYYY-MM-DD
+  function parseDate(str) {
+    if (!str) return '';
+    const months = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
+    // "27 April 2026" / "27th April 2026"
+    const m1 = str.match(/(\d{1,2})(?:st|nd|rd|th)?\s+(\w+)\s+(\d{4})/i);
+    if (m1) {
+      const mo = months[m1[2].slice(0,3).toLowerCase()];
+      if (mo) return `${m1[3]}-${String(mo).padStart(2,'0')}-${m1[1].padStart(2,'0')}`;
+    }
+    // "04/27/2026" or "27/04/2026"
+    const m2 = str.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (m2) return `${m2[3]}-${m2[2].padStart(2,'0')}-${m2[1].padStart(2,'0')}`;
+    return '';
+  }
+
+  const invoice_number = get([
+    /invoice\s*(?:no\.?|number|#)[:\s#]*([A-Z0-9\-]+)/i,
+    /inv[\s\-#:]*([A-Z0-9\-]+)/i,
+  ]);
+
+  const rawDate = get([
+    /(?:invoice\s+)?date[:\s]+([^\n\r,;]+)/i,
+    /dated?[:\s]+([^\n\r,;]+)/i,
+  ]);
+  const invoice_date = parseDate(rawDate);
+
+  const rawDue = get([
+    /due\s+date[:\s]+([^\n\r,;]+)/i,
+    /payment\s+due[:\s]+([^\n\r,;]+)/i,
+  ]);
+  const due_date = parseDate(rawDue);
+
+  const vendor_name = get([
+    /from[:\s]+([^\n\r]+)/i,
+    /(?:bill(?:ed)?\s+)?(?:from|by)[:\s]+([^\n\r]+)/i,
+  ]);
+
+  const client_name = get([
+    /bill(?:ed)?\s+to[:\s]+([^\n\r]+)/i,
+    /(?:to|attn)[:\s]+([^\n\r]+)/i,
+    /client[:\s]+([^\n\r]+)/i,
+  ]);
+
+  const po_number_ref = get([
+    /(?:po|purchase\s+order)\s*(?:no\.?|number|#)?[:\s#]*([A-Z0-9\-]+)/i,
+    /order\s*(?:no|number|#)[:\s]*([A-Z0-9\-]+)/i,
+  ]);
+
+  // Currency
+  const currMatch = text.match(/\b(USD|EUR|GBP|AED|PKR)\b/);
+  const currency = currMatch ? currMatch[1] : 'PKR';
+
+  // Tax
+  const taxMatch = text.match(/(?:tax|gst|vat|sts)[^\d]*([0-9,]+(?:\.\d{1,2})?)/i);
+  const tax_amount = taxMatch ? taxMatch[1].replace(/,/g, '') : '0';
+
+  // NTN/notes
+  const ntnMatch = text.match(/ntn[:\s]*([0-9\-]+)/i);
+  const notes = ntnMatch ? `NTN: ${ntnMatch[1]}` : '';
+
+  // Line items — look for patterns like "Description  Qty  Rate  Amount"
+  const line_items = [];
+  // Try to extract rows: text followed by number patterns
+  const lineRe = /([A-Za-z][^\d\n]{5,60?})\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)/g;
+  let m;
+  while ((m = lineRe.exec(text)) !== null) {
+    const desc = m[1].trim();
+    const qty  = parseFloat(m[2].replace(/,/g,''));
+    const rate = parseFloat(m[3].replace(/,/g,''));
+    const amt  = parseFloat(m[4].replace(/,/g,''));
+    // Skip header-like rows and tax rows
+    if (/total|subtotal|tax|gst|vat|balance|amount/i.test(desc) && qty < 2) continue;
+    if (desc.length < 4) continue;
+    line_items.push({ description: desc, notes: '', quantity: qty || 1, unit_price: rate || amt, amount: String(amt || rate) });
+  }
+
+  return { invoice_number, invoice_date, due_date, vendor_name, client_name, po_number_ref, currency, tax_amount, notes, line_items };
 }
 
 // ─── Receive Payment Modal ────────────────────────────────────────────────────
@@ -133,7 +241,6 @@ function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) {
           </div>
 
           <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Header grid */}
             <div className="grid-2" style={{ gap: 8 }}>
               {[
                 ['Business Wing', wing?.name || '—'],
@@ -152,7 +259,6 @@ function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) {
               ))}
             </div>
 
-            {/* Line items */}
             {lineItems.length > 0 && (
               <div>
                 <div style={{ fontWeight: 600, marginBottom: 8 }}>Line Items</div>
@@ -175,7 +281,6 @@ function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) {
               </div>
             )}
 
-            {/* Totals */}
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <div style={{ minWidth: 280, background: 'var(--bg)', borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {[
@@ -192,7 +297,6 @@ function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) {
               </div>
             </div>
 
-            {/* Received info */}
             {inv.status === 'Received' && inv.received_bank_name && (
               <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>
                 <strong>Received into:</strong> {inv.received_bank_name} on {formatDate(inv.received_date)}
@@ -253,7 +357,7 @@ function InvoiceForm({ wings, prefill, onClose, onSaved }) {
 
   const [items, setItems] = useState(defaultItems);
   const [form, setForm]   = useState({
-    wing_id:        prefill?.wing_id        || wings[0]?.id || '',
+    wing_id:        prefill?.wing_id        || '',
     vendor_name:    prefill?.vendor_name    || '',
     client_name:    prefill?.client_name    || '',
     invoice_number: prefill?.invoice_number || '',
@@ -269,11 +373,12 @@ function InvoiceForm({ wings, prefill, onClose, onSaved }) {
 
   function f(k) { return (e) => setForm((p) => ({ ...p, [k]: e.target.value })); }
 
-  // Load POs when wing changes
   useEffect(() => {
     if (form.wing_id) {
       api.get('/purchase-orders', { params: { wing_id: form.wing_id, status: 'Active' } })
         .then((r) => setPos(r.data)).catch(() => {});
+    } else {
+      setPos([]);
     }
   }, [form.wing_id]);
 
@@ -281,9 +386,9 @@ function InvoiceForm({ wings, prefill, onClose, onSaved }) {
   function addItem()    { setItems((p) => [...p, { ...EMPTY_ITEM }]); }
   function removeItem(i) { setItems((p) => p.filter((_, idx) => idx !== i)); }
 
-  const subtotal   = items.reduce((s, i) => s + parseFloat(i.amount || 0), 0);
-  const taxAmt     = parseFloat(form.tax_amount) || 0;
-  const total      = subtotal + taxAmt;
+  const subtotal = items.reduce((s, i) => s + parseFloat(i.amount || 0), 0);
+  const taxAmt   = parseFloat(form.tax_amount) || 0;
+  const total    = subtotal + taxAmt;
 
   async function submit(e) {
     e.preventDefault();
@@ -322,12 +427,18 @@ function InvoiceForm({ wings, prefill, onClose, onSaved }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" style={{ maxWidth: 760 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>{prefill ? 'Confirm & Save Extracted Invoice' : 'New Invoice'}</h3>
+          <h3>{prefill ? 'Review & Save Extracted Invoice' : 'New Invoice'}</h3>
           <button className="btn btn-secondary btn-sm" onClick={onClose}><X size={14}/></button>
         </div>
 
         <form onSubmit={submit}>
           <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+            {prefill && (
+              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#1e40af' }}>
+                Fields extracted from your PDF — review and correct if needed, then select a Business Wing and save.
+              </div>
+            )}
 
             {/* ── Wing selector — top, prominent ── */}
             <div style={{ background: 'var(--bg)', borderRadius: 10, padding: '14px 16px', border: '2px solid var(--navy)' }}>
@@ -337,8 +448,13 @@ function InvoiceForm({ wings, prefill, onClose, onSaved }) {
               <select className="form-control" required value={form.wing_id} onChange={f('wing_id')}
                 style={{ marginTop: 6, fontWeight: 600 }}>
                 <option value="">— Select Business Wing —</option>
-                {wings.map((w) => <option key={w.id} value={w.id}>{w.name} ({w.code})</option>)}
+                {wings.map((w) => <option key={w.id} value={w.id}>{w.name}{w.code ? ` (${w.code})` : ''}</option>)}
               </select>
+              {wings.length === 0 && (
+                <div style={{ fontSize: 12, color: 'var(--danger)', marginTop: 6 }}>
+                  No wings available. Please log out and log back in.
+                </div>
+              )}
             </div>
 
             {/* Vendor + Client */}
@@ -350,7 +466,7 @@ function InvoiceForm({ wings, prefill, onClose, onSaved }) {
               </div>
               <div className="form-group">
                 <label className="form-label">Client / Bill To</label>
-                <input className="form-control" placeholder="e.g. MPDFM LTD — Mr. Zulfiqar"
+                <input className="form-control" placeholder="e.g. MPDFM LTD"
                   value={form.client_name} onChange={f('client_name')}/>
               </div>
             </div>
@@ -374,13 +490,6 @@ function InvoiceForm({ wings, prefill, onClose, onSaved }) {
                 ) : (
                   <input className="form-control" placeholder="PO / SO # reference (text)"
                     value={form.po_number_ref} onChange={f('po_number_ref')}/>
-                )}
-                {pos.length > 0 && (
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                    Or store as reference:&nbsp;
-                    <input style={{ fontSize: 12, border: 'none', borderBottom: '1px solid var(--border)', background: 'transparent', width: 140 }}
-                      placeholder="PO/SO text ref" value={form.po_number_ref} onChange={f('po_number_ref')}/>
-                  </div>
                 )}
               </div>
             </div>
@@ -415,7 +524,7 @@ function InvoiceForm({ wings, prefill, onClose, onSaved }) {
               <div className="form-group">
                 <label className="form-label">Tax Amount</label>
                 <input type="number" step="0.01" className="form-control"
-                  placeholder="e.g. 6066" value={form.tax_amount} onChange={f('tax_amount')}/>
+                  placeholder="0" value={form.tax_amount} onChange={f('tax_amount')}/>
               </div>
             </div>
 
@@ -477,7 +586,7 @@ function InvoiceForm({ wings, prefill, onClose, onSaved }) {
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? 'Saving…' : prefill ? 'Confirm & Save Invoice' : 'Create Invoice'}
+              {saving ? 'Saving…' : prefill ? 'Save Invoice' : 'Create Invoice'}
             </button>
           </div>
         </form>
@@ -487,32 +596,17 @@ function InvoiceForm({ wings, prefill, onClose, onSaved }) {
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-// Sample extracted invoice — pre-fills form when user clicks "Import Extracted"
-const EXTRACTED_INVOICE = {
-  vendor_name:    'Raheem Solutions (Pvt.) Ltd.',
-  client_name:    'MPDFM LTD — Mr. Zulfiqar',
-  invoice_number: '1223',
-  po_number_ref:  '3124240000',
-  invoice_date:   '2026-04-27',
-  due_date:       '2026-05-12',
-  currency:       'PKR',
-  exchange_rate:  '1',
-  tax_amount:     '6066',
-  notes:          'NTN: 8262967-4. GST-5 @ 5%.',
-  line_items: [
-    { description: 'Travel Cost',                    notes: 'Travel to ISB',       quantity: 1, unit_price: 35000, amount: '35000' },
-    { description: 'MPDFM Web Portal Retainer Charges', notes: 'Month of March 2022', quantity: 1, unit_price: 75000, amount: '75000' },
-    { description: 'Annual Server Charges',           notes: 'AWS Services',        quantity: 1, unit_price: 11320, amount: '11320' },
-  ],
-};
-
 export default function Invoices() {
   const { activeWing, wings } = useAuth();
   const toast                 = useToast();
+  const fileInputRef          = useRef(null);
+
   const [invoices, setInvoices]         = useState([]);
   const [loading, setLoading]           = useState(true);
+  const [extracting, setExtracting]     = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
-  const [modal, setModal]               = useState(null); // null | 'create' | 'import' | invoiceId
+  const [modal, setModal]               = useState(null); // null | 'create' | invoiceId
+  const [prefill, setPrefill]           = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -526,11 +620,40 @@ export default function Invoices() {
 
   useEffect(() => { load(); }, [load]);
 
-  const totalPending  = invoices.filter((i) => i.status === 'Pending').reduce((s, i) => s + parseFloat(i.pkr_equivalent || i.total_amount || 0), 0);
-  const overdueCount  = invoices.filter((i) => i.status === 'Overdue').length;
+  async function handlePDFUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setExtracting(true);
+    try {
+      const text = await extractTextFromPDF(file);
+      const extracted = parseInvoiceText(text);
+      setPrefill(extracted);
+      setModal('import');
+    } catch (err) {
+      console.error('PDF extraction error', err);
+      toast('Could not read PDF. Please enter invoice details manually.', 'error');
+      setPrefill(null);
+      setModal('create');
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  const totalPending = invoices.filter((i) => i.status === 'Pending').reduce((s, i) => s + parseFloat(i.pkr_equivalent || i.total_amount || 0), 0);
+  const overdueCount = invoices.filter((i) => i.status === 'Overdue').length;
 
   return (
     <div>
+      {/* Hidden file input for PDF upload */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf"
+        style={{ display: 'none' }}
+        onChange={handlePDFUpload}
+      />
+
       <div className="page-header">
         <div>
           <h1>Invoices</h1>
@@ -543,10 +666,15 @@ export default function Invoices() {
           )}
         </div>
         <div className="flex gap-2">
-          <button className="btn btn-secondary" onClick={() => setModal('import')}>
-            <FileText size={15}/> Import Extracted
+          <button
+            className="btn btn-secondary"
+            disabled={extracting}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload size={15}/>
+            {extracting ? ' Extracting…' : ' Import PDF Invoice'}
           </button>
-          <button className="btn btn-primary" onClick={() => setModal('create')}>
+          <button className="btn btn-primary" onClick={() => { setPrefill(null); setModal('create'); }}>
             <Plus size={15}/> New Invoice
           </button>
         </div>
@@ -601,11 +729,13 @@ export default function Invoices() {
       </div>
 
       {/* Modals */}
-      {modal === 'create' && (
-        <InvoiceForm wings={wings} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }}/>
-      )}
-      {modal === 'import' && (
-        <InvoiceForm wings={wings} prefill={EXTRACTED_INVOICE} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }}/>
+      {(modal === 'create' || modal === 'import') && (
+        <InvoiceForm
+          wings={wings}
+          prefill={prefill}
+          onClose={() => { setModal(null); setPrefill(null); }}
+          onSaved={() => { setModal(null); setPrefill(null); load(); }}
+        />
       )}
       {modal && modal !== 'create' && modal !== 'import' && (
         <InvoiceDetail invoiceId={modal} wings={wings} onClose={() => setModal(null)} onRefresh={load}/>

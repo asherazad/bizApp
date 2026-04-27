@@ -3,39 +3,42 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev":            "vite",
-    "build":          "vite build",
-    "preview":        "vite preview",
-    "dev:full":       "concurrently \"npm run server:dev\" \"npm run dev\"",
-    "server":         "cd server && node index.js",
-    "server:dev":     "cd server && npx nodemon index.js",
-    "db:migrate":     "cd server && npx knex migrate:latest",
-    "db:seed":        "cd server && npx knex seed:run",
-    "db:setup":       "npm run db:migrate && npm run db:seed",
-    "db:rollback":    "cd server && npx knex migrate:rollback",
-    "db:migrate:prod":"cd server && NODE_ENV=production npx knex migrate:latest"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "dev:full": "concurrently \"npm run server:dev\" \"npm run dev\"",
+    "server": "cd server && node index.js",
+    "server:dev": "cd server && npx nodemon index.js",
+    "db:migrate": "cd server && npx knex migrate:latest",
+    "db:seed": "cd server && npx knex seed:run",
+    "db:setup": "npm run db:migrate && npm run db:seed",
+    "db:rollback": "cd server && npx knex migrate:rollback",
+    "db:migrate:prod": "cd server && NODE_ENV=production npx knex migrate:latest"
   },
   "dependencies": {
-    "react":            "^18.3.1",
-    "react-dom":        "^18.3.1",
+    "axios": "^1.7.2",
+    "bcryptjs": "^2.4.3",
+    "concurrently": "^8.2.2",
+    "cors": "^2.8.5",
+    "date-fns": "^3.6.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "knex": "^3.1.0",
+    "lucide-react": "^0.383.0",
+    "pdfjs-dist": "^5.7.284",
+    "pg": "^8.12.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "react-router-dom": "^6.23.1",
-    "axios":            "^1.7.2",
-    "recharts":         "^2.12.7",
-    "lucide-react":     "^0.383.0",
-    "date-fns":         "^3.6.0",
-    "concurrently":     "^8.2.2",
-    "express":          "^4.19.2",
-    "cors":             "^2.8.5",
-    "knex":             "^3.1.0",
-    "pg":               "^8.12.0",
-    "jsonwebtoken":     "^9.0.2",
-    "bcryptjs":         "^2.4.3",
-    "uuid":             "^10.0.0",
-    "dotenv":           "^16.4.5"
+    "recharts": "^2.12.7",
+    "uuid": "^10.0.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
-    "vite":                 "^5.3.1"
+    "vite": "^5.3.1"
   },
-  "engines": { "node": "20.x" }
+  "engines": {
+    "node": "20.x"
+  }
 }
