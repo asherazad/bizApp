@@ -20,6 +20,8 @@ module.exports = {
     },
     migrations: { directory: __dirname + '/db/migrations' },
     seeds:      { directory: __dirname + '/db/seeds' },
-    pool:       { min: 1, max: 3 },
+    pool:       { min: 0, max: 3, acquireTimeoutMillis: 10000 },
+    // pgBouncer transaction mode requires this
+    asyncStackTraces: false,
   },
 };
