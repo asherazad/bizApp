@@ -76,12 +76,13 @@ router.post('/', async (req, res) => {
       if (items.length) {
         await trx('invoice_items').insert(
           items.map((it, i) => ({
-            invoice_id: inv.id,
+            invoice_id:  inv.id,
             description: it.description,
-            quantity: it.quantity || 1,
-            unit_price: it.unit_price,
-            amount: it.amount,
-            sort_order: i,
+            notes:       it.notes || null,
+            quantity:    it.quantity   || 1,
+            unit_price:  it.unit_price || 0,
+            amount:      it.amount     || 0,
+            sort_order:  i,
           }))
         );
       }
