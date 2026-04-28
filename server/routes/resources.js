@@ -136,8 +136,10 @@ router.post('/import', upload.single('file'), async (req, res) => {
 
     const added   = inserted.filter(r => r.action === 'inserted').length;
     const updated = inserted.filter(r => r.action === 'updated').length;
+    // Surface first skip reason so user can diagnose DB issues immediately
+    const firstError = skipped.find(s => s.reason)?.reason || null;
     res.json({
-      message: `Import complete — ${added} added, ${updated} updated${skipped.length ? `, ${skipped.length} skipped` : ''}`,
+      message: `Import complete — ${added} added, ${updated} updated${skipped.length ? `, ${skipped.length} skipped` : ''}${firstError ? ' | First error: ' + firstError : ''}`,
       added, updated, skipped,
     });
   } catch (err) {
@@ -146,31 +148,40 @@ router.post('/import', upload.single('file'), async (req, res) => {
   }
 });
 
+// ─── GET /test  — quick diagnostic, no column enumeration ────────────────────
+router.get('/test', async (req, res) => {
+  try {
+    const count = await db('resources').count('id as n').first();
+    const cols  = await db.raw(`
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns
+      WHERE table_name = 'resources'
+      ORDER BY ordinal_position
+    `);
+    res.json({ ok: true, row_count: count.n, columns: cols.rows });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ─── GET /  ───────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
     const { wing_id, employment_status, job_type, search } = req.query;
-    let q = db('resources')
-      .leftJoin('business_wings', 'business_wings.id', 'resources.business_wing_id')
-      .select(
-        'resources.id', 'resources.resource_seq_id', 'resources.full_name',
-        'resources.cnic', 'resources.designation',
-        'resources.account_number', 'resources.bank_name', 'resources.mode_of_transfer',
-        'resources.job_type', 'resources.employment_status', 'resources.status',
-        'resources.join_date', 'resources.gross_salary',
-        'resources.tax_amount', 'resources.net_salary',
-        'resources.created_at',
-        'business_wings.name as wing_name', 'business_wings.code as wing_code'
-      )
-      .orderByRaw('resources.resource_seq_id ASC NULLS LAST, resources.full_name ASC NULLS LAST');
 
-    if (wing_id)           q = q.where('resources.business_wing_id', wing_id);
+    // Use r.* to avoid hard-coding column names — works regardless of exact schema
+    let q = db('resources as r')
+      .leftJoin('business_wings as bw', 'bw.id', 'r.business_wing_id')
+      .select('r.*', 'bw.name as wing_name', 'bw.code as wing_code')
+      .orderByRaw('r.resource_seq_id ASC NULLS LAST, r.full_name ASC NULLS LAST');
+
+    if (wing_id)           q = q.where('r.business_wing_id', wing_id);
     if (employment_status) q = q.whereRaw(
-      '(resources.employment_status = ? OR resources.status = ?)',
+      '(r.employment_status = ? OR r.status = ?)',
       [employment_status, employment_status]
     );
-    if (job_type)          q = q.where('resources.job_type', job_type);
-    if (search)            q = q.whereRaw('resources.full_name ILIKE ?', [`%${search}%`]);
+    if (job_type)          q = q.where('r.job_type', job_type);
+    if (search)            q = q.whereRaw('r.full_name ILIKE ?', [`%${search}%`]);
 
     res.json(await q);
   } catch (err) {
