@@ -8,6 +8,8 @@ router.use(authenticate);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+const TODAY = () => new Date().toISOString().split('T')[0];
+
 // ─── Excel date serial → ISO date string ─────────────────────────────────────
 function excelDateToISO(val) {
   if (!val) return null;
@@ -15,20 +17,25 @@ function excelDateToISO(val) {
   if (typeof val === 'string' && /\d{4}-\d{2}-\d{2}/.test(val)) return val.slice(0, 10);
   const n = Number(val);
   if (!n || n < 1) return null;
-  // Excel serial: days since 1900-01-01 with Lotus leap-year bug; 25569 = Unix epoch in Excel days
   const d = new Date((n - 25569) * 86400 * 1000);
   return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
 }
 
 // ─── Map one Excel row to a DB-ready object ───────────────────────────────────
+// Covers all actual DB columns (both original and those added by migration)
 function normaliseRow(row, wings) {
   const label = String(row['Business wing'] || row['Business Wing'] || '').trim().toLowerCase();
   const wing  = wings.find(w =>
     w.name?.toLowerCase() === label ||
     w.code?.toLowerCase() === label ||
-    label.includes(w.code?.toLowerCase())
+    (label && label.includes(w.code?.toLowerCase()))
   );
+
+  const employmentStatus = String(row['Status'] || '').trim() || null;
+  const grossSalary      = parseFloat(row['Gross Salary']) || 0;
+
   return {
+    // ── new columns (added by migration) ─────────────────────────────────────
     resource_seq_id:   parseInt(row['Resource ID'] || row['resource_id']) || null,
     full_name:         String(row['Name'] || '').trim() || null,
     business_wing_id:  wing?.id || null,
@@ -38,11 +45,50 @@ function normaliseRow(row, wings) {
     bank_name:         String(row['Bank Name'] || '').trim() || null,
     mode_of_transfer:  String(row['Mode of Transfer'] || '').trim() || null,
     job_type:          String(row['Job Type'] || '').trim() || null,
-    employment_status: String(row['Status'] || '').trim() || null,
-    join_date:         excelDateToISO(row['Joining Date']),
-    gross_salary:      parseFloat(row['Gross Salary']) || 0,
+    employment_status: employmentStatus,
+    join_date:         excelDateToISO(row['Joining Date']) || TODAY(),
+    gross_salary:      grossSalary,
     tax_amount:        parseFloat(row['Tax']) || 0,
     net_salary:        parseFloat(row['Net Salary Payable (PKR)'] || row['Net Salary Payable']) || 0,
+    // ── original columns that may be NOT NULL ─────────────────────────────────
+    resource_type:     'employee',
+    status:            employmentStatus || 'active',
+    basic_salary:      grossSalary,
+    annual_leaves:     0,
+  };
+}
+
+// ─── Safe insert payload for manual create ────────────────────────────────────
+function buildInsertPayload(body) {
+  const {
+    business_wing_id, full_name, cnic, designation,
+    account_number, bank_name, mode_of_transfer,
+    job_type, employment_status, join_date,
+    gross_salary, tax_amount, net_salary,
+  } = body;
+
+  const gs = parseFloat(gross_salary) || 0;
+  const es = (employment_status || '').trim() || null;
+
+  return {
+    full_name:         full_name,
+    business_wing_id:  business_wing_id || null,
+    cnic:              cnic              || null,
+    designation:       designation       || null,
+    account_number:    account_number    || null,
+    bank_name:         bank_name         || null,
+    mode_of_transfer:  mode_of_transfer  || null,
+    job_type:          job_type          || null,
+    employment_status: es,
+    join_date:         join_date         || TODAY(),
+    gross_salary:      gs,
+    tax_amount:        parseFloat(tax_amount) || 0,
+    net_salary:        parseFloat(net_salary) || 0,
+    // original NOT NULL columns — provide safe defaults
+    resource_type:     'employee',
+    status:            es || 'active',
+    basic_salary:      gs,
+    annual_leaves:     0,
   };
 }
 
@@ -72,7 +118,6 @@ router.post('/import', upload.single('file'), async (req, res) => {
 
       const obj = normaliseRow(row, wings);
       try {
-        // Upsert by CNIC (unique) or full_name to handle re-imports
         let existing = null;
         if (obj.cnic) existing = await db('resources').where({ cnic: obj.cnic }).first();
         if (!existing) existing = await db('resources').where({ full_name: obj.full_name }).first();
@@ -109,9 +154,9 @@ router.get('/', async (req, res) => {
       .leftJoin('business_wings', 'business_wings.id', 'resources.business_wing_id')
       .select(
         'resources.id', 'resources.resource_seq_id', 'resources.full_name',
-        'resources.cnic', 'resources.account_number', 'resources.bank_name',
-        'resources.mode_of_transfer', 'resources.designation',
-        'resources.job_type', 'resources.employment_status',
+        'resources.cnic', 'resources.designation',
+        'resources.account_number', 'resources.bank_name', 'resources.mode_of_transfer',
+        'resources.job_type', 'resources.employment_status', 'resources.status',
         'resources.join_date', 'resources.gross_salary',
         'resources.tax_amount', 'resources.net_salary',
         'resources.created_at',
@@ -120,7 +165,10 @@ router.get('/', async (req, res) => {
       .orderByRaw('resources.resource_seq_id ASC NULLS LAST, resources.full_name ASC NULLS LAST');
 
     if (wing_id)           q = q.where('resources.business_wing_id', wing_id);
-    if (employment_status) q = q.where('resources.employment_status', employment_status);
+    if (employment_status) q = q.whereRaw(
+      '(resources.employment_status = ? OR resources.status = ?)',
+      [employment_status, employment_status]
+    );
     if (job_type)          q = q.where('resources.job_type', job_type);
     if (search)            q = q.whereRaw('resources.full_name ILIKE ?', [`%${search}%`]);
 
@@ -154,29 +202,11 @@ router.get('/:id', async (req, res) => {
 // ─── POST /  (single create) ──────────────────────────────────────────────────
 router.post('/', async (req, res) => {
   try {
-    const {
-      business_wing_id, full_name, cnic, designation,
-      account_number, bank_name, mode_of_transfer,
-      job_type, employment_status, join_date,
-      gross_salary, tax_amount, net_salary,
-    } = req.body;
+    if (!req.body.full_name) return res.status(400).json({ error: 'full_name is required' });
 
-    if (!full_name) return res.status(400).json({ error: 'full_name is required' });
-
-    const [resource] = await db('resources').insert({
-      business_wing_id: business_wing_id || null,
-      full_name, cnic: cnic || null,
-      designation: designation || null,
-      account_number: account_number || null,
-      bank_name: bank_name || null,
-      mode_of_transfer: mode_of_transfer || null,
-      job_type: job_type || null,
-      employment_status: employment_status || null,
-      join_date: join_date || null,
-      gross_salary: parseFloat(gross_salary) || 0,
-      tax_amount:   parseFloat(tax_amount)   || 0,
-      net_salary:   parseFloat(net_salary)   || 0,
-    }).returning('*');
+    const [resource] = await db('resources')
+      .insert(buildInsertPayload(req.body))
+      .returning('*');
 
     res.status(201).json(resource);
   } catch (err) {
@@ -191,11 +221,25 @@ router.put('/:id', async (req, res) => {
     const allowed = [
       'business_wing_id', 'full_name', 'cnic', 'designation',
       'account_number', 'bank_name', 'mode_of_transfer',
-      'job_type', 'employment_status', 'join_date',
-      'gross_salary', 'tax_amount', 'net_salary',
+      'job_type', 'employment_status', 'status',
+      'join_date', 'gross_salary', 'tax_amount', 'net_salary',
+      'basic_salary', 'resource_type',
     ];
-    const update = Object.fromEntries(allowed.filter(k => k in req.body).map(k => [k, req.body[k]]));
-    const [resource] = await db('resources').where({ id: req.params.id }).update(update).returning('*');
+    const update = Object.fromEntries(
+      allowed.filter(k => k in req.body).map(k => [k, req.body[k]])
+    );
+    // Keep status in sync with employment_status
+    if ('employment_status' in update && !('status' in update)) {
+      update.status = update.employment_status || 'active';
+    }
+    if ('gross_salary' in update && !('basic_salary' in update)) {
+      update.basic_salary = parseFloat(update.gross_salary) || 0;
+    }
+
+    const [resource] = await db('resources')
+      .where({ id: req.params.id })
+      .update(update)
+      .returning('*');
     if (!resource) return res.status(404).json({ error: 'Not found' });
     res.json(resource);
   } catch (err) {
@@ -240,7 +284,7 @@ router.post('/:id/inventory', async (req, res) => {
       item_name:     item_name.trim(),
       description:   description   || null,
       serial_number: serial_number || null,
-      assigned_date: assigned_date || new Date().toISOString().split('T')[0],
+      assigned_date: assigned_date || TODAY(),
       notes:         notes || null,
     }).returning('*');
 
