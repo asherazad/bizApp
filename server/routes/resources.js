@@ -118,10 +118,7 @@ router.get('/', async (req, res) => {
         'resources.is_active', 'resources.created_at',
         'business_wings.name as wing_name', 'business_wings.code as wing_code'
       )
-      .orderBy([
-        { column: 'resources.resource_seq_id', order: 'asc', nulls: 'last' },
-        { column: 'resources.full_name' },
-      ]);
+      .orderByRaw('resources.resource_seq_id ASC NULLS LAST, resources.full_name ASC NULLS LAST');
 
     if (wing_id)           q = q.where('resources.business_wing_id', wing_id);
     if (employment_status) q = q.where('resources.employment_status', employment_status);

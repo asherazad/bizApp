@@ -19,12 +19,139 @@ function Field({ label, value }) {
   );
 }
 
+const EMPTY_FORM = {
+  full_name: '', designation: '', cnic: '', account_number: '',
+  bank_name: '', mode_of_transfer: '', job_type: '', employment_status: '',
+  join_date: '', gross_salary: '', tax_amount: '', net_salary: '',
+  business_wing_id: '',
+};
+
+// ─── Shared resource form fields ──────────────────────────────────────────────
+function ResourceFormFields({ form, onChange, wings }) {
+  function f(k) { return e => onChange(k, e.target.value); }
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="form-group">
+        <label className="form-label">Full Name *</label>
+        <input className="form-control" required value={form.full_name} onChange={f('full_name')} />
+      </div>
+      <div className="form-group">
+        <label className="form-label">Wing</label>
+        <select className="form-control" value={form.business_wing_id} onChange={f('business_wing_id')}>
+          <option value="">None</option>
+          {wings.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+        </select>
+      </div>
+      <div className="form-group">
+        <label className="form-label">Designation</label>
+        <input className="form-control" value={form.designation} onChange={f('designation')} />
+      </div>
+      <div className="form-group">
+        <label className="form-label">CNIC</label>
+        <input className="form-control" placeholder="12345-6789012-3" value={form.cnic} onChange={f('cnic')} />
+      </div>
+      <div className="form-group">
+        <label className="form-label">Account Number</label>
+        <input className="form-control" value={form.account_number} onChange={f('account_number')} />
+      </div>
+      <div className="form-group">
+        <label className="form-label">Bank Name</label>
+        <input className="form-control" value={form.bank_name} onChange={f('bank_name')} />
+      </div>
+      <div className="form-group">
+        <label className="form-label">Mode of Transfer</label>
+        <select className="form-control" value={form.mode_of_transfer} onChange={f('mode_of_transfer')}>
+          <option value="">Select…</option>
+          {['Bank Transfer', 'Cash', 'Cheque'].map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      </div>
+      <div className="form-group">
+        <label className="form-label">Job Type</label>
+        <select className="form-control" value={form.job_type} onChange={f('job_type')}>
+          <option value="">Select…</option>
+          {['On-Site', 'Remote', 'Out Source', 'Part time'].map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      </div>
+      <div className="form-group">
+        <label className="form-label">Employment Status</label>
+        <select className="form-control" value={form.employment_status} onChange={f('employment_status')}>
+          <option value="">Select…</option>
+          {['Permanent', 'Probation', '3rd party', 'Hybrid', 'Part time'].map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      </div>
+      <div className="form-group">
+        <label className="form-label">Join Date</label>
+        <input type="date" className="form-control" value={form.join_date} onChange={f('join_date')} />
+      </div>
+      <div className="form-group">
+        <label className="form-label">Gross Salary (PKR)</label>
+        <input type="number" className="form-control" value={form.gross_salary} onChange={f('gross_salary')} />
+      </div>
+      <div className="form-group">
+        <label className="form-label">Tax Amount (PKR)</label>
+        <input type="number" className="form-control" value={form.tax_amount} onChange={f('tax_amount')} />
+      </div>
+      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+        <label className="form-label">Net Salary (PKR)</label>
+        <input type="number" className="form-control" value={form.net_salary} onChange={f('net_salary')} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Add Resource modal ───────────────────────────────────────────────────────
+function AddModal({ wings, onClose, onSaved, toast }) {
+  const [form, setForm] = useState({ ...EMPTY_FORM });
+  const [saving, setSaving] = useState(false);
+
+  function onChange(k, v) { setForm(p => ({ ...p, [k]: v })); }
+
+  async function submit(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.post('/resources', {
+        ...form,
+        business_wing_id: form.business_wing_id || null,
+        gross_salary: parseFloat(form.gross_salary) || 0,
+        tax_amount:   parseFloat(form.tax_amount)   || 0,
+        net_salary:   parseFloat(form.net_salary)   || 0,
+      });
+      toast('Resource created', 'success');
+      onSaved();
+    } catch (err) { toast(err.response?.data?.error || 'Error', 'error'); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal"
+        style={{ maxWidth: 620, width: '95vw', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="modal-header">
+          <h3 style={{ margin: 0 }}>Add Resource</h3>
+          <button className="btn btn-secondary btn-sm btn-icon" onClick={onClose}><X size={14} /></button>
+        </div>
+        <form onSubmit={submit} style={{ overflowY: 'auto', flex: 1, padding: '16px 20px' }}>
+          <ResourceFormFields form={form} onChange={onChange} wings={wings} />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Add Resource'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── Inventory panel ──────────────────────────────────────────────────────────
 function InventoryPanel({ resourceId, toast }) {
-  const [items, setItems]   = useState([]);
+  const [items, setItems]     = useState([]);
   const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [adding, setAdding]   = useState(false);
+  const [saving, setSaving]   = useState(false);
   const today = new Date().toISOString().split('T')[0];
   const [form, setForm] = useState({ item_name: '', serial_number: '', assigned_date: today, notes: '' });
 
@@ -139,16 +266,22 @@ function InventoryPanel({ resourceId, toast }) {
 // ─── Detail / Edit modal ──────────────────────────────────────────────────────
 function DetailModal({ resource, wings, onClose, onSaved, toast }) {
   const [editing, setEditing] = useState(false);
-  const [form, setForm]       = useState({ ...resource });
+  const [form, setForm]       = useState({ ...resource, join_date: (resource.join_date || '').slice(0, 10) });
   const [saving, setSaving]   = useState(false);
 
-  function f(k) { return e => setForm(p => ({ ...p, [k]: e.target.value })); }
+  function onChange(k, v) { setForm(p => ({ ...p, [k]: v })); }
 
   async function save(e) {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.put(`/resources/${resource.id}`, form);
+      await api.put(`/resources/${resource.id}`, {
+        ...form,
+        business_wing_id: form.business_wing_id || null,
+        gross_salary: parseFloat(form.gross_salary) || 0,
+        tax_amount:   parseFloat(form.tax_amount)   || 0,
+        net_salary:   parseFloat(form.net_salary)   || 0,
+      });
       toast('Saved', 'success');
       setEditing(false);
       onSaved();
@@ -181,44 +314,7 @@ function DetailModal({ resource, wings, onClose, onSaved, toast }) {
         <div style={{ overflowY: 'auto', flex: 1, padding: '16px 20px' }}>
           {editing ? (
             <form onSubmit={save}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                {[
-                  { label: 'Full Name', key: 'full_name' },
-                  { label: 'Designation', key: 'designation' },
-                  { label: 'CNIC', key: 'cnic' },
-                  { label: 'Account Number', key: 'account_number' },
-                  { label: 'Bank Name', key: 'bank_name' },
-                  { label: 'Mode of Transfer', key: 'mode_of_transfer' },
-                  { label: 'Job Type', key: 'job_type' },
-                  { label: 'Employment Status', key: 'employment_status' },
-                ].map(({ label, key }) => (
-                  <div className="form-group" key={key}>
-                    <label className="form-label">{label}</label>
-                    <input className="form-control" value={form[key] || ''} onChange={f(key)} />
-                  </div>
-                ))}
-                <div className="form-group">
-                  <label className="form-label">Wing</label>
-                  <select className="form-control" value={form.business_wing_id || ''} onChange={f('business_wing_id')}>
-                    <option value="">None</option>
-                    {wings.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Join Date</label>
-                  <input type="date" className="form-control" value={(form.join_date || '').slice(0, 10)} onChange={f('join_date')} />
-                </div>
-                {[
-                  { label: 'Gross Salary', key: 'gross_salary' },
-                  { label: 'Tax Amount', key: 'tax_amount' },
-                  { label: 'Net Salary', key: 'net_salary' },
-                ].map(({ label, key }) => (
-                  <div className="form-group" key={key}>
-                    <label className="form-label">{label}</label>
-                    <input type="number" className="form-control" value={form[key] || ''} onChange={f(key)} />
-                  </div>
-                ))}
-              </div>
+              <ResourceFormFields form={form} onChange={onChange} wings={wings} />
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setEditing(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
@@ -258,6 +354,7 @@ export default function Resources() {
   const [resources, setResources] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [detail, setDetail]       = useState(null);
+  const [addOpen, setAddOpen]     = useState(false);
   const [importing, setImporting] = useState(false);
   const [filters, setFilters]     = useState({ search: '', employment_status: '', job_type: '' });
   const importRef = useRef();
@@ -265,13 +362,17 @@ export default function Resources() {
   async function load() {
     setLoading(true);
     const params = {
-      ...(activeWing?.id ? { wing_id: activeWing.id } : {}),
-      ...(filters.employment_status ? { employment_status: filters.employment_status } : {}),
-      ...(filters.job_type         ? { job_type: filters.job_type }                   : {}),
-      ...(filters.search           ? { search: filters.search }                        : {}),
+      ...(activeWing?.id           ? { wing_id: activeWing.id }                         : {}),
+      ...(filters.employment_status ? { employment_status: filters.employment_status }   : {}),
+      ...(filters.job_type          ? { job_type: filters.job_type }                     : {}),
+      ...(filters.search            ? { search: filters.search }                         : {}),
     };
-    try { setResources((await api.get('/resources', { params })).data); }
-    catch { toast('Failed to load resources', 'error'); }
+    try {
+      setResources((await api.get('/resources', { params })).data);
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.message || '';
+      toast(`Failed to load resources${detail ? ': ' + detail : ''}`, 'error');
+    }
     finally { setLoading(false); }
   }
 
@@ -315,6 +416,9 @@ export default function Resources() {
             disabled={importing}
           >
             <Upload size={14} /> {importing ? 'Importing…' : 'Import Excel'}
+          </button>
+          <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
+            <Plus size={14} /> Add Resource
           </button>
         </div>
       </div>
@@ -381,7 +485,7 @@ export default function Resources() {
                 <tr>
                   <td colSpan={14} style={{ textAlign: 'center', padding: 48 }}>
                     <UserCheck size={32} style={{ opacity: 0.25, display: 'block', margin: '0 auto 8px' }} />
-                    <span className="text-muted">No resources found. Import an Excel file to get started.</span>
+                    <span className="text-muted">No resources found. Import an Excel file or add one manually.</span>
                   </td>
                 </tr>
               ) : resources.map(r => (
@@ -418,6 +522,15 @@ export default function Resources() {
           </table>
         </div>
       </div>
+
+      {addOpen && (
+        <AddModal
+          wings={wings || []}
+          onClose={() => setAddOpen(false)}
+          onSaved={() => { setAddOpen(false); load(); }}
+          toast={toast}
+        />
+      )}
 
       {detail && (
         <DetailModal
