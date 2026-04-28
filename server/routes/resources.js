@@ -148,17 +148,22 @@ router.post('/import', upload.single('file'), async (req, res) => {
   }
 });
 
-// ─── GET /test  — quick diagnostic, no column enumeration ────────────────────
+// ─── GET /test  — quick diagnostic ───────────────────────────────────────────
 router.get('/test', async (req, res) => {
   try {
     const count = await db('resources').count('id as n').first();
     const cols  = await db.raw(`
-      SELECT column_name, data_type, is_nullable
+      SELECT column_name, data_type, is_nullable, column_default
       FROM information_schema.columns
       WHERE table_name = 'resources'
       ORDER BY ordinal_position
     `);
-    res.json({ ok: true, row_count: count.n, columns: cols.rows });
+    const checks = await db.raw(`
+      SELECT conname, pg_get_constraintdef(oid) as definition
+      FROM pg_constraint
+      WHERE conrelid = 'resources'::regclass AND contype = 'c'
+    `);
+    res.json({ ok: true, row_count: count.n, columns: cols.rows, check_constraints: checks.rows });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
