@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { formatCurrency, formatDate, statusBadgeClass } from '../../lib/format';
-import { X, CheckCircle, AlertTriangle, Trash2 } from 'lucide-react';
+import { X, CheckCircle, AlertTriangle, Trash2, Paperclip } from 'lucide-react';
 import InvoiceFileViewer from '../../components/InvoiceFileViewer';
 
 const MODE_LABEL = { single: 'Single Wing', split: 'Split Between Wings', line_item: 'By Line Item' };
@@ -82,6 +82,27 @@ export default function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) 
   const [updating, setUpdating]         = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting]         = useState(false);
+  const [attaching, setAttaching]       = useState(false);
+  const fileRef                         = useRef(null);
+
+  async function attachFile(file) {
+    if (!file) return;
+    setAttaching(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      await api.post(`/invoices/${invoiceId}/file`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast('File attached successfully', 'success');
+      load();
+    } catch (err) {
+      toast(err.response?.data?.error || 'Upload failed', 'error');
+    } finally {
+      setAttaching(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
 
   async function deleteInvoice() {
     setDeleting(true);
@@ -155,7 +176,15 @@ export default function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) 
               <span className={`badge ${statusBadgeClass(inv.status?.toLowerCase())}`}>{inv.status}</span>
             </div>
             <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-              {inv.has_file && (
+              {/* Hidden file input for attach */}
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.webp,.tiff"
+                style={{ display:'none' }}
+                onChange={e => { if (e.target.files[0]) attachFile(e.target.files[0]); }}
+              />
+              {inv.has_file ? (
                 <InvoiceFileViewer
                   invoiceId={invoiceId}
                   fileName={inv.source_file_name}
@@ -163,6 +192,14 @@ export default function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) 
                   fileSize={inv.source_file_size}
                   trigger="button"
                 />
+              ) : (
+                <button
+                  className="btn btn-secondary btn-sm"
+                  disabled={attaching}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <Paperclip size={13}/> {attaching ? 'Uploading…' : 'Attach File'}
+                </button>
               )}
               <button className="btn btn-secondary btn-sm" onClick={onClose}><X size={14}/></button>
             </div>

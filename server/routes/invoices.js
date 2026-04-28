@@ -41,9 +41,11 @@ function tempPath(filename) {
 
 async function moveFile(fromPath, toPath) {
   if (!supabase) return false;
-  const { error: copyErr } = await supabase.storage.from(BUCKET).copy(fromPath, toPath);
-  if (copyErr) return false;
-  await supabase.storage.from(BUCKET).remove([fromPath]);
+  const { error } = await supabase.storage.from(BUCKET).move(fromPath, toPath);
+  if (error) {
+    console.warn('moveFile warning:', error.message);
+    return false;
+  }
   return true;
 }
 
@@ -286,6 +288,48 @@ router.get('/:id/file', async (req, res) => {
 
     res.json({ signed_url: data.signedUrl, expires_in: 3600, file_name: inv.source_file_name, file_type: inv.source_file_type });
   } catch (err) {
+    res.status(500).json({ error: 'Server error', detail: err.message });
+  }
+});
+
+// ─── POST /:id/file  (attach / replace file on an existing invoice) ──────────
+router.post('/:id/file', upload.single('file'), async (req, res) => {
+  try {
+    const inv = await db('invoices').where({ id: req.params.id })
+      .select('id', 'business_wing_id', 'invoice_date', 'source_file_path').first();
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+
+    const allowed = await userCanViewWing(req.user.id, inv.business_wing_id, req.user.role);
+    if (!allowed) return res.status(403).json({ error: 'Access denied' });
+
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: 'A file (PDF or image) is required' });
+    if (!supabase) return res.status(503).json({ error: 'Storage not configured' });
+
+    // Remove existing file from storage before replacing
+    if (inv.source_file_path) {
+      const { error: rmErr } = await supabase.storage.from(BUCKET).remove([inv.source_file_path]);
+      if (rmErr) console.warn('Remove old file warning:', rmErr.message);
+    }
+
+    const path = storagePath(inv.business_wing_id, new Date(inv.invoice_date), inv.id, file.originalname);
+    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file.buffer, {
+      contentType: file.mimetype,
+      upsert: true,
+    });
+    if (upErr) return res.status(500).json({ error: 'Upload failed', detail: upErr.message });
+
+    await db('invoices').where({ id: req.params.id }).update({
+      source_file_path:        path,
+      source_file_name:        file.originalname,
+      source_file_size:        file.size,
+      source_file_type:        file.mimetype,
+      source_file_uploaded_at: new Date(),
+    });
+
+    res.json({ has_file: true, file_name: file.originalname, file_size: file.size, file_type: file.mimetype });
+  } catch (err) {
+    console.error('POST /invoices/:id/file', err);
     res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
