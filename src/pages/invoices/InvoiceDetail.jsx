@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { formatCurrency, formatDate, statusBadgeClass } from '../../lib/format';
-import { X, CheckCircle, Edit2, AlertTriangle } from 'lucide-react';
+import { X, CheckCircle, AlertTriangle, Trash2 } from 'lucide-react';
+import InvoiceFileViewer from '../../components/InvoiceFileViewer';
 
 const MODE_LABEL = { single: 'Single Wing', split: 'Split Between Wings', line_item: 'By Line Item' };
 
@@ -76,9 +77,26 @@ function ReceiveModal({ invoice, wings, onClose, onSaved }) {
 // ─── Invoice Detail ───────────────────────────────────────────────────────────
 export default function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) {
   const toast = useToast();
-  const [inv, setInv]               = useState(null);
-  const [receiveModal, setReceive]  = useState(false);
-  const [updating, setUpdating]     = useState(false);
+  const [inv, setInv]                   = useState(null);
+  const [receiveModal, setReceive]      = useState(false);
+  const [updating, setUpdating]         = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting]         = useState(false);
+
+  async function deleteInvoice() {
+    setDeleting(true);
+    try {
+      await api.delete(`/invoices/${invoiceId}`);
+      toast('Invoice deleted', 'success');
+      onClose();
+      onRefresh();
+    } catch (err) {
+      toast(err.response?.data?.error || 'Delete failed', 'error');
+      setConfirmDelete(false);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const load = useCallback(async () => {
     try { setInv((await api.get(`/invoices/${invoiceId}`)).data); }
@@ -136,7 +154,18 @@ export default function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) 
               <h3>Invoice #{inv.invoice_number}</h3>
               <span className={`badge ${statusBadgeClass(inv.status?.toLowerCase())}`}>{inv.status}</span>
             </div>
-            <button className="btn btn-secondary btn-sm" onClick={onClose}><X size={14}/></button>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              {inv.has_file && (
+                <InvoiceFileViewer
+                  invoiceId={invoiceId}
+                  fileName={inv.source_file_name}
+                  fileType={inv.source_file_type}
+                  fileSize={inv.source_file_size}
+                  trigger="button"
+                />
+              )}
+              <button className="btn btn-secondary btn-sm" onClick={onClose}><X size={14}/></button>
+            </div>
           </div>
 
           <div className="modal-body" style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:20 }}>
@@ -293,18 +322,34 @@ export default function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) 
           {/* Footer actions */}
           <div className="modal-footer" style={{ justifyContent:'space-between' }}>
             <div className="flex gap-2">
-              {canEdit && inv.status === 'Pending' && (
+              {/* Delete — show confirm prompt inline */}
+              {!confirmDelete && inv.status !== 'Received' && (
+                <button className="btn btn-danger btn-sm" onClick={() => setConfirmDelete(true)}>
+                  <Trash2 size={13}/> Delete
+                </button>
+              )}
+              {confirmDelete && (
+                <>
+                  <span style={{ fontSize:12, color:'var(--danger)', alignSelf:'center', fontWeight:600 }}>Delete permanently?</span>
+                  <button className="btn btn-danger btn-sm" disabled={deleting} onClick={deleteInvoice}>
+                    {deleting ? 'Deleting…' : 'Yes, delete'}
+                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setConfirmDelete(false)}>Cancel</button>
+                </>
+              )}
+              {/* Status transitions */}
+              {!confirmDelete && canEdit && inv.status === 'Pending' && (
                 <button className="btn btn-secondary btn-sm" disabled={updating} onClick={() => updateStatus('Overdue')}>Mark Overdue</button>
               )}
-              {canEdit && inv.status === 'Overdue' && (
+              {!confirmDelete && canEdit && inv.status === 'Overdue' && (
                 <button className="btn btn-secondary btn-sm" disabled={updating} onClick={() => updateStatus('Pending')}>Revert to Pending</button>
               )}
-              {canEdit && (
+              {!confirmDelete && canEdit && (
                 <button className="btn btn-secondary btn-sm" disabled={updating} onClick={() => updateStatus('Disputed')}>Mark Disputed</button>
               )}
             </div>
             <div className="flex gap-2">
-              {['Pending','Overdue'].includes(inv.status) && (
+              {!confirmDelete && ['Pending','Overdue'].includes(inv.status) && (
                 <button className="btn btn-primary btn-sm" onClick={() => setReceive(true)}>
                   <CheckCircle size={13}/> Mark Received
                 </button>

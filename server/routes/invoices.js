@@ -471,6 +471,36 @@ router.patch('/:id/status', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Server error', detail: err.message }); }
 });
 
+// ─── DELETE /:id  (remove invoice + its file from storage) ───────────────────
+router.delete('/:id', async (req, res) => {
+  try {
+    const inv = await db('invoices').where({ id: req.params.id })
+      .select('id', 'business_wing_id', 'source_file_path', 'status').first();
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+    if (inv.status === 'Received')
+      return res.status(409).json({ error: 'Received invoices cannot be deleted. Reverse the payment record first.' });
+
+    const allowed = await userCanViewWing(req.user.id, inv.business_wing_id, req.user.role);
+    if (!allowed) return res.status(403).json({ error: 'Access denied' });
+
+    // Remove file from storage (best-effort — don't block delete on storage failure)
+    if (inv.source_file_path && supabase) {
+      const { error } = await supabase.storage.from(BUCKET).remove([inv.source_file_path]);
+      if (error) console.warn('Storage delete warning:', error.message);
+    }
+
+    await db.transaction(async (trx) => {
+      await trx('invoice_wing_splits').where({ invoice_id: req.params.id }).delete();
+      await trx('invoices').where({ id: req.params.id }).delete();
+    });
+
+    res.json({ message: 'Invoice deleted' });
+  } catch (err) {
+    console.error('DELETE /invoices/:id', err);
+    res.status(500).json({ error: 'Server error', detail: err.message });
+  }
+});
+
 // ─── POST /:id/receive (legacy compat) ───────────────────────────────────────
 router.post('/:id/receive', async (req, res) => {
   try {
