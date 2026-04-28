@@ -3,7 +3,7 @@ import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { extractFromPDF } from '../../lib/pdfExtract';
 import { formatCurrency, formatDate } from '../../lib/format';
-import { Upload, Plus, Trash2, X, ChevronRight, ChevronLeft, Check, AlertTriangle } from 'lucide-react';
+import { Upload, Plus, Trash2, X, ChevronRight, ChevronLeft, Check, AlertTriangle, FileText } from 'lucide-react';
 
 const CURRENCIES = ['PKR', 'USD', 'EUR', 'AED', 'GBP'];
 const EMPTY_ITEM = { description: '', notes: '', quantity: 1, unit_price: '', amount: '', business_wing_id: '' };
@@ -31,7 +31,7 @@ function Stepper({ steps, current }) {
                 width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 12, fontWeight: 700,
                 background: done ? 'var(--success)' : active ? 'var(--navy)' : 'var(--border)',
-                color: done || active ? '#fff' : 'var(--text-muted)',
+                color: done || active ? 'var(--white)' : 'var(--text-muted)',
               }}>
                 {done ? <Check size={13}/> : idx}
               </div>
@@ -49,26 +49,78 @@ function Stepper({ steps, current }) {
   );
 }
 
+function humanFileSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 // ─── Step 1 — Upload ──────────────────────────────────────────────────────────
-function StepUpload({ onExtracted }) {
+function StepUpload({ onExtracted, uploadedFile, setUploadedFile }) {
   const fileRef = useRef(null);
-  const [extracting, setExtracting] = useState(false);
-  const [drag, setDrag] = useState(false);
+  const [drag, setDrag]         = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
   const toast = useToast();
 
   async function handle(file) {
-    if (!file || !file.name.match(/\.(pdf|png|jpg|jpeg)$/i)) {
+    if (!file) return;
+    const allowed = /\.(pdf|png|jpg|jpeg|webp|tiff?)$/i;
+    if (!allowed.test(file.name)) {
       toast('Please upload a PDF or image file', 'error'); return;
     }
-    setExtracting(true);
+    if (file.size > 20 * 1024 * 1024) {
+      toast('File must be under 20 MB', 'error'); return;
+    }
+
+    setUploading(true);
+    setProgress(0);
+
+    // Run client-side extraction in parallel with server upload (best effort)
+    const extractPromise = extractFromPDF(file).catch(() => ({}));
+
     try {
-      const data = await extractFromPDF(file);
-      onExtracted(data);
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await api.post('/invoices/parse', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: e => {
+          if (e.total) setProgress(Math.round(e.loaded / e.total * 100));
+        },
+      });
+
+      const serverFields = response.data.parsed_fields || {};
+      const clientData   = await extractPromise;
+
+      // Merge: prefer server fields for scalars, client for line items
+      const merged = {
+        invoice_number: serverFields.invoice_number || clientData.invoice_number || '',
+        vendor_name:    serverFields.vendor_name    || clientData.vendor_name    || '',
+        client_name:    serverFields.client_name    || clientData.client_name    || '',
+        invoice_date:   serverFields.invoice_date   || clientData.invoice_date   || '',
+        due_date:       serverFields.due_date        || clientData.due_date       || '',
+        currency:       serverFields.currency        || clientData.currency       || 'PKR',
+        tax_amount:     serverFields.tax_amount      || clientData.tax_amount     || '0',
+        notes:          serverFields.notes           || clientData.notes          || '',
+        line_items:     clientData.line_items?.length ? clientData.line_items : [],
+      };
+
+      setUploadedFile({
+        temp_file_path: response.data.temp_file_path,
+        file_name:      response.data.file_name,
+        file_size:      response.data.file_size,
+        file_type:      response.data.file_type,
+      });
+
+      onExtracted(merged);
     } catch (err) {
-      console.error('PDF extract error', err);
-      toast('Could not read file — you can enter details manually', 'error');
-      onExtracted({});
-    } finally { setExtracting(false); }
+      toast(err.response?.data?.error || 'Upload failed — try again', 'error');
+    } finally {
+      setUploading(false);
+      setProgress(0);
+    }
   }
 
   function onDrop(e) {
@@ -79,45 +131,68 @@ function StepUpload({ onExtracted }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, padding: '20px 0' }}>
-      <input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg" style={{ display:'none' }} onChange={e => handle(e.target.files[0])}/>
-      <div
-        onDragOver={e => { e.preventDefault(); setDrag(true); }}
-        onDragLeave={() => setDrag(false)}
-        onDrop={onDrop}
-        onClick={() => fileRef.current?.click()}
-        style={{
-          width: '100%', maxWidth: 480, minHeight: 200,
-          border: `2px dashed ${drag ? 'var(--navy)' : 'var(--border)'}`,
-          borderRadius: 12, display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: 12,
-          cursor: 'pointer', background: drag ? '#f0f4ff' : 'var(--bg)',
-          transition: 'all .15s',
-        }}
-      >
-        {extracting ? (
-          <>
-            <div style={{ fontSize: 28, animation: 'spin 1s linear infinite' }}>⟳</div>
-            <div style={{ fontSize: 14, color: 'var(--text-muted)', fontWeight: 500 }}>Reading invoice…</div>
-          </>
-        ) : (
-          <>
-            <Upload size={36} color="var(--navy)" strokeWidth={1.5}/>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>Drop invoice here or click to browse</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Supports PDF and images (PNG, JPG)</div>
+      <input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.tiff" style={{ display:'none' }} onChange={e => { if (e.target.files[0]) handle(e.target.files[0]); }}/>
+
+      {/* File badge if already uploaded */}
+      {uploadedFile && !uploading && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--success-light)', border: '1px solid var(--success-border)', borderRadius: 8, padding: '10px 14px', width: '100%', maxWidth: 480 }}>
+          <FileText size={16} color="var(--success)"/>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {uploadedFile.file_name}
             </div>
-            <button className="btn btn-primary" type="button" onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>
-              <Upload size={14}/> Choose File
-            </button>
-          </>
-        )}
-      </div>
-      <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-        — or —&nbsp;
-        <button className="btn btn-secondary btn-sm" type="button" onClick={() => onExtracted({})}>
-          Enter details manually
-        </button>
-      </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+              {humanFileSize(uploadedFile.file_size)} · Uploaded ✓
+            </div>
+          </div>
+          <button
+            className="btn btn-secondary btn-sm"
+            type="button"
+            onClick={() => { setUploadedFile(null); fileRef.current?.click(); }}
+          >
+            Replace
+          </button>
+        </div>
+      )}
+
+      {!uploadedFile && (
+        <div
+          onDragOver={e => { e.preventDefault(); setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={onDrop}
+          onClick={() => !uploading && fileRef.current?.click()}
+          style={{
+            width: '100%', maxWidth: 480, minHeight: 200,
+            border: `2px dashed ${drag ? 'var(--navy)' : 'var(--border)'}`,
+            borderRadius: 12, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 12,
+            cursor: uploading ? 'default' : 'pointer',
+            background: drag ? 'var(--electric-light)' : 'var(--bg)',
+            transition: 'all .15s',
+          }}
+        >
+          {uploading ? (
+            <div style={{ width: '80%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+              <div style={{ fontSize: 14, color: 'var(--text-muted)', fontWeight: 500 }}>Uploading and reading invoice…</div>
+              <div style={{ width: '100%', height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+                <div style={{ width: `${progress}%`, height: '100%', background: 'var(--navy)', borderRadius: 4, transition: 'width .15s' }}/>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{progress}%</div>
+            </div>
+          ) : (
+            <>
+              <Upload size={36} color="var(--navy)" strokeWidth={1.5}/>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>Drop invoice here or click to browse</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>PDF, PNG, JPG, WEBP · Max 20 MB</div>
+              </div>
+              <button className="btn btn-primary" type="button" onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>
+                <Upload size={14}/> Choose File
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -295,8 +370,8 @@ function StepPO({ form, totalAmount, currency, exchRate, selectedPO, setSelected
             ))}
           </div>
           {overBudget && (
-            <div style={{ marginTop: 10, background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8, padding: '10px 12px', fontSize: 13, display: 'flex', gap: 8, alignItems: 'center' }}>
-              <AlertTriangle size={16} color="#d97706"/>
+            <div style={{ marginTop: 10, background: 'var(--warning-light)', border: '1px solid var(--warning-border)', borderRadius: 8, padding: '10px 12px', fontSize: 13, display: 'flex', gap: 8, alignItems: 'center' }}>
+              <AlertTriangle size={16} color="var(--warning-text)"/>
               <span>This invoice exceeds the remaining PO balance by <strong>{formatCurrency(Math.abs(afterThis), selectedPO.currency)}</strong>. You can still proceed.</span>
             </div>
           )}
@@ -366,7 +441,7 @@ function StepWings({ wings, totalAmount, currency, exchRate, wingMode, setWingMo
         style={{
           padding: '14px 18px', borderRadius: 10, cursor: 'pointer',
           border: `2px solid ${selected ? 'var(--navy)' : 'var(--border)'}`,
-          background: selected ? '#f0f4ff' : 'var(--surface)',
+          background: selected ? 'var(--electric-light)' : 'var(--surface)',
           display: 'flex', alignItems: 'flex-start', gap: 12,
         }}
       >
@@ -382,7 +457,7 @@ function StepWings({ wings, totalAmount, currency, exchRate, wingMode, setWingMo
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {autoSingle && (
-        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>
+        <div style={{ background: 'var(--success-light)', border: '1px solid var(--success-border)', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>
           Auto-assigned to <strong>{wings[0].name}</strong> based on your access.
         </div>
       )}
@@ -608,8 +683,11 @@ export default function InvoiceWizard({ wings, mode = 'import', onClose, onSaved
     : ['Review Fields', 'Link PO', 'Assign Wings', 'Confirm'];
   const STEP_NUMS = mode === 'import' ? [1,2,3,4,5] : [2,3,4,5];
 
-  const [step, setStep]   = useState(startStep);
+  const [step, setStep]     = useState(startStep);
   const [saving, setSaving] = useState(false);
+
+  // Step 1 state (file upload)
+  const [uploadedFile, setUploadedFile] = useState(null); // { temp_file_path, file_name, file_size, file_type }
 
   // Step 2 state
   const [form, setForm] = useState({
@@ -654,6 +732,7 @@ export default function InvoiceWizard({ wings, mode = 'import', onClose, onSaved
   }
 
   function canProceed() {
+    if (step === 1) return !!uploadedFile;
     if (step === 2) return form.invoice_number && form.invoice_date;
     if (step === 4) {
       if (!wingMode) return false;
@@ -703,6 +782,11 @@ export default function InvoiceWizard({ wings, mode = 'import', onClose, onSaved
         line_items,
         po_id:          selectedPO?.id || null,
         notes:          form.notes || null,
+        // file storage
+        temp_file_path: uploadedFile?.temp_file_path || null,
+        file_name:      uploadedFile?.file_name      || null,
+        file_size:      uploadedFile?.file_size      || null,
+        file_type:      uploadedFile?.file_type      || null,
       };
 
       await api.post('/invoices', body);
@@ -716,7 +800,7 @@ export default function InvoiceWizard({ wings, mode = 'import', onClose, onSaved
   }
 
   const stepContent = {
-    1: <StepUpload onExtracted={onExtracted}/>,
+    1: <StepUpload onExtracted={onExtracted} uploadedFile={uploadedFile} setUploadedFile={setUploadedFile}/>,
     2: <StepReview form={form} setForm={setForm} lineItems={lineItems} setLineItems={setLineItems}/>,
     3: <StepPO form={form} totalAmount={totalAmount} currency={form.currency} exchRate={exchRate} selectedPO={selectedPO} setSelectedPO={setSelectedPO}/>,
     4: <StepWings wings={wings} totalAmount={totalAmount} currency={form.currency} exchRate={exchRate} wingMode={wingMode} setWingMode={setWingMode} singleWingId={singleWingId} setSingleWingId={setSingleWingId} wingSplits={wingSplits} setWingSplits={setWingSplits} lineItems={lineItems} setLineItems={setLineItems}/>,
@@ -750,7 +834,7 @@ export default function InvoiceWizard({ wings, mode = 'import', onClose, onSaved
           </div>
           <div className="flex gap-2">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            {step < 5 && step !== 1 && (
+            {step < 5 && (step !== 1 || uploadedFile) && (
               <button type="button" className="btn btn-primary" disabled={!canProceed()} onClick={() => setStep(s => s + 1)}>
                 Next <ChevronRight size={14}/>
               </button>

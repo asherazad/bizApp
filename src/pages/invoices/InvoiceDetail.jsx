@@ -280,8 +280,8 @@ export default function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) 
                     </div>
                   </div>
                   {inv.po_remaining < 0 && (
-                    <div style={{ width:'100%', background:'#fef3c7', borderRadius:8, padding:'8px 12px', fontSize:12, display:'flex', gap:8, alignItems:'center' }}>
-                      <AlertTriangle size={14} color="#d97706"/>
+                    <div style={{ width:'100%', background:'var(--warning-light)', borderRadius:8, padding:'8px 12px', fontSize:12, display:'flex', gap:8, alignItems:'center' }}>
+                      <AlertTriangle size={14} color="var(--warning-text)"/>
                       This invoice exceeds the PO balance by {formatCurrency(Math.abs(inv.po_remaining), inv.po_currency||inv.currency)}
                     </div>
                   )}

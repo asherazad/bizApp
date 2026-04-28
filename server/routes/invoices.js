@@ -1,14 +1,63 @@
-const router = require('express').Router();
-const db = require('../db');
-const { authenticate } = require('../middleware/auth');
+const router  = require('express').Router();
+const multer  = require('multer');
+const crypto  = require('crypto');
+const db      = require('../db');
+const supabase = require('../supabaseClient');
+const { authenticate, requireAdmin } = require('../middleware/auth');
 
 router.use(authenticate);
 
-// ─── Server-side text parser ──────────────────────────────────────────────────
+const BUCKET   = 'invoice-documents';
+const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_BYTES },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['application/pdf','image/jpeg','image/png','image/webp','image/tiff'];
+    cb(null, allowed.includes(file.mimetype));
+  },
+});
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function sanitizeFilename(name) {
+  return name.replace(/[^a-zA-Z0-9\-\.]/g, '_').replace(/_{2,}/g, '_');
+}
+
+function storagePath(wingId, date, invoiceId, filename) {
+  const y  = date.getFullYear();
+  const m  = String(date.getMonth() + 1).padStart(2, '0');
+  const fn = sanitizeFilename(filename);
+  return `${wingId}/${y}/${m}/${invoiceId}_${fn}`;
+}
+
+function tempPath(filename) {
+  const now = new Date();
+  const y   = now.getFullYear();
+  const m   = String(now.getMonth() + 1).padStart(2, '0');
+  const id  = crypto.randomUUID();
+  return `temp/${y}/${m}/${id}_${sanitizeFilename(filename)}`;
+}
+
+async function moveFile(fromPath, toPath) {
+  if (!supabase) return false;
+  const { error: copyErr } = await supabase.storage.from(BUCKET).copy(fromPath, toPath);
+  if (copyErr) return false;
+  await supabase.storage.from(BUCKET).remove([fromPath]);
+  return true;
+}
+
+async function userCanViewWing(userId, wingId, role) {
+  if (role === 'admin') return true;
+  const row = await db('wing_access_grants').where({ user_id: userId, business_wing_id: wingId }).first();
+  return !!row;
+}
+
+// ─── Text parser (for server-side extraction) ─────────────────────────────────
 function parseInvoiceText(text) {
   const months = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
   function get(patterns) {
-    for (const re of patterns) { const m = text.match(re); if (m) return m[1]?.trim() || ''; }
+    for (const re of patterns) { const m = text.match(re); if (m) return m[1]?.trim()||''; }
     return '';
   }
   function parseDate(str) {
@@ -36,11 +85,11 @@ function parseInvoiceText(text) {
   return { invoice_number, invoice_date, due_date, vendor_name, client_name, po_number_ref, currency, tax_amount, notes, line_items: [] };
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Wing/split helpers ───────────────────────────────────────────────────────
 function primaryWing(mode, wingId, splits, lineItems) {
   if (mode === 'single') return wingId;
   if (mode === 'split' && splits && splits.length)
-    return splits.reduce((a, b) => parseFloat(b.split_percentage||0) > parseFloat(a.split_percentage||0) ? b : a).business_wing_id;
+    return splits.reduce((a,b) => parseFloat(b.split_percentage||0) > parseFloat(a.split_percentage||0) ? b : a).business_wing_id;
   if (mode === 'line_item' && lineItems && lineItems.length) {
     const totals = {};
     for (const item of lineItems) {
@@ -53,35 +102,79 @@ function primaryWing(mode, wingId, splits, lineItems) {
   return wingId;
 }
 
-function splitsFromLineItems(lineItems, total, currency, exchRate) {
-  const totals = {};
+// Aggregate line items into per-wing splits.
+// Tax is distributed proportionally so split_amounts always sum to total_amount
+// and split_percentages always sum to 100%.
+function splitsFromLineItems(lineItems, total, taxAmount, currency, exchRate) {
+  const lineTotals = {};
+  let assignedSubtotal = 0;
   for (const item of lineItems) {
     if (!item.business_wing_id) continue;
-    totals[item.business_wing_id] = (totals[item.business_wing_id]||0) + parseFloat(item.amount||0);
+    const amt = parseFloat(item.amount || 0);
+    lineTotals[item.business_wing_id] = (lineTotals[item.business_wing_id] || 0) + amt;
+    assignedSubtotal += amt;
   }
-  return Object.entries(totals).map(([wid, amt]) => ({
-    business_wing_id: wid,
-    split_amount: amt,
-    split_percentage: total > 0 ? parseFloat((amt/total*100).toFixed(4)) : 0,
-    pkr_equivalent: currency === 'PKR' ? amt : amt * exchRate,
-  }));
+  const tax = parseFloat(taxAmount || 0);
+  return Object.entries(lineTotals).map(([wid, lineAmt]) => {
+    // Proportional share of tax for this wing
+    const taxShare = assignedSubtotal > 0 ? (lineAmt / assignedSubtotal) * tax : 0;
+    const amt = parseFloat((lineAmt + taxShare).toFixed(2));
+    return {
+      business_wing_id: wid,
+      split_amount: amt,
+      split_percentage: total > 0 ? parseFloat((amt / total * 100).toFixed(4)) : 0,
+      pkr_equivalent: currency === 'PKR' ? amt : parseFloat((amt * exchRate).toFixed(2)),
+    };
+  });
 }
 
-// ─── POST /parse ──────────────────────────────────────────────────────────────
-router.post('/parse', async (req, res) => {
-  try {
-    const { raw_text } = req.body;
-    if (!raw_text) return res.status(400).json({ error: 'raw_text required' });
-    res.json(parseInvoiceText(raw_text));
-  } catch (err) {
-    res.status(500).json({ error: 'Parse error', detail: err.message });
+// ══════════════════════════════════════════════════════════════════════════════
+// ROUTES
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ─── POST /parse  (multipart file upload + extraction) ────────────────────────
+router.post('/parse', upload.single('file'), async (req, res) => {
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: 'A file (PDF or image) is required' });
+
+  let temp_file_path = null;
+  let parsed_fields  = { invoice_number:'', invoice_date:'', due_date:'', vendor_name:'', client_name:'', po_number_ref:'', currency:'PKR', tax_amount:'0', notes:'', line_items:[] };
+
+  // ── Upload to Supabase Storage ──
+  if (supabase) {
+    const tp = tempPath(file.originalname);
+    const { error: upErr } = await supabase.storage.from(BUCKET).upload(tp, file.buffer, {
+      contentType: file.mimetype,
+      upsert: false,
+    });
+    if (!upErr) temp_file_path = tp;
+    else console.warn('Supabase upload warning:', upErr.message);
   }
+
+  // ── Extract text for PDFs ──
+  if (file.mimetype === 'application/pdf') {
+    try {
+      const pdfParse = require('pdf-parse');
+      const { text } = await pdfParse(file.buffer);
+      parsed_fields = parseInvoiceText(text);
+    } catch (err) {
+      console.warn('pdf-parse warning:', err.message);
+    }
+  }
+
+  res.json({
+    parsed_fields,
+    temp_file_path,
+    file_name: file.originalname,
+    file_size: file.size,
+    file_type: file.mimetype,
+  });
 });
 
-// ─── GET / ────────────────────────────────────────────────────────────────────
+// ─── GET /  ───────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
-    const { wing_id, status, date_from, date_to, po_id, currency } = req.query;
+    const { wing_id, status, date_from, date_to, po_id, currency, search } = req.query;
     let q = db('invoices')
       .leftJoin('business_wings', 'business_wings.id', 'invoices.business_wing_id')
       .leftJoin('purchase_orders', 'purchase_orders.id', 'invoices.po_id')
@@ -98,6 +191,19 @@ router.get('/', async (req, res) => {
     if (date_to)   q = q.where('invoices.invoice_date', '<=', date_to);
     if (po_id)     q = q.where('invoices.po_id', po_id);
     if (currency)  q = q.where('invoices.currency', currency);
+    if (search && search.trim().length >= 2) {
+      const like = `%${search.trim()}%`;
+      q = q.where(function () {
+        this.where('invoices.invoice_number', 'ilike', like)
+          .orWhere('invoices.vendor_name',    'ilike', like)
+          .orWhere('invoices.client_name',    'ilike', like)
+          .orWhere('purchase_orders.po_number', 'ilike', like)
+          .orWhere('business_wings.name',     'ilike', like);
+      });
+    }
+
+    const limit = parseInt(req.query.limit, 10);
+    if (limit > 0) q = q.limit(limit);
 
     const invoices = await q;
     const multiIds = invoices.filter(i => i.wing_assignment_mode && i.wing_assignment_mode !== 'single').map(i => i.id);
@@ -112,7 +218,12 @@ router.get('/', async (req, res) => {
         splitsMap[s.invoice_id].push(s);
       }
     }
-    res.json(invoices.map(inv => ({ ...inv, wing_splits: splitsMap[inv.id] || [] })));
+    // Strip raw storage path — expose metadata + has_file flag only
+    res.json(invoices.map(({ source_file_path, ...inv }) => ({
+      ...inv,
+      has_file: !!source_file_path,
+      wing_splits: splitsMap[inv.id] || [],
+    })));
   } catch (err) {
     console.error('GET /invoices', err);
     res.status(500).json({ error: 'Server error', detail: err.message });
@@ -141,19 +252,67 @@ router.get('/:id', async (req, res) => {
 
     let po_already_invoiced = 0, po_remaining = null;
     if (inv.po_id) {
-      const row = await db('invoices').where('po_id', inv.po_id)
-        .whereNot('id', inv.id).sum('total_amount as s').first();
+      const row = await db('invoices').where('po_id', inv.po_id).whereNot('id', inv.id).sum('total_amount as s').first();
       po_already_invoiced = parseFloat(row && row.s ? row.s : 0);
       po_remaining = parseFloat(inv.po_value||0) - po_already_invoiced - parseFloat(inv.total_amount||0);
     }
 
-    res.json({ ...inv, wing_splits, po_already_invoiced, po_remaining });
+    // Never expose file path to client — only metadata
+    const { source_file_path, ...safeInv } = inv;
+    const hasFile = !!source_file_path;
+    res.json({ ...safeInv, wing_splits, po_already_invoiced, po_remaining, has_file: hasFile });
   } catch (err) {
     res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
-// ─── POST / ───────────────────────────────────────────────────────────────────
+// ─── GET /:id/file  (signed URL) ──────────────────────────────────────────────
+router.get('/:id/file', async (req, res) => {
+  try {
+    const inv = await db('invoices').where({ id: req.params.id }).select('id','business_wing_id','source_file_path','source_file_name','source_file_type').first();
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+    if (!inv.source_file_path) return res.status(404).json({ error: 'No file attached to this invoice' });
+
+    const allowed = await userCanViewWing(req.user.id, inv.business_wing_id, req.user.role);
+    if (!allowed) return res.status(403).json({ error: 'Access denied' });
+
+    if (!supabase) return res.status(503).json({ error: 'Storage not configured' });
+
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(inv.source_file_path, 3600);
+    if (error) {
+      console.error('createSignedUrl error', error);
+      return res.status(500).json({ error: 'Could not generate file URL. The file may have been deleted.' });
+    }
+
+    res.json({ signed_url: data.signedUrl, expires_in: 3600, file_name: inv.source_file_name, file_type: inv.source_file_type });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error', detail: err.message });
+  }
+});
+
+// ─── DELETE /:id/file  (admin only) ───────────────────────────────────────────
+router.delete('/:id/file', requireAdmin, async (req, res) => {
+  try {
+    const inv = await db('invoices').where({ id: req.params.id }).select('id','source_file_path','source_file_name').first();
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+    if (!inv.source_file_path) return res.status(404).json({ error: 'No file attached' });
+
+    if (supabase) {
+      const { error } = await supabase.storage.from(BUCKET).remove([inv.source_file_path]);
+      if (error) console.warn('Storage remove warning:', error.message);
+    }
+
+    await db('invoices').where({ id: req.params.id }).update({
+      source_file_path: null, source_file_name: null, source_file_size: null,
+      source_file_type: null, source_file_uploaded_at: null,
+    });
+    res.json({ message: 'File deleted' });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error', detail: err.message });
+  }
+});
+
+// ─── POST /  (create invoice + finalize file) ─────────────────────────────────
 router.post('/', async (req, res) => {
   try {
     const {
@@ -162,6 +321,8 @@ router.post('/', async (req, res) => {
       invoice_number, vendor_name, client_name,
       invoice_date, due_date, currency = 'PKR', exchange_rate,
       total_amount, tax_amount, line_items = [], po_id, notes,
+      // File fields from parse step
+      temp_file_path, file_name, file_size, file_type,
     } = req.body;
 
     if (!invoice_number || !invoice_date)
@@ -204,12 +365,29 @@ router.post('/', async (req, res) => {
         })));
       }
       if (wing_assignment_mode === 'line_item') {
-        const splits = splitsFromLineItems(line_items, total, currency, exchRate);
+        const taxAmt = parseFloat(tax_amount) || 0;
+        const splits = splitsFromLineItems(line_items, total, taxAmt, currency, exchRate);
         if (splits.length) await trx('invoice_wing_splits').insert(splits.map(s => ({ invoice_id: inv.id, ...s })));
       }
       return inv;
     });
-    res.status(201).json(invoice);
+
+    // ── Move file from temp → final path ──
+    if (temp_file_path && file_name && supabase) {
+      const final = storagePath(primary, new Date(invoice_date), invoice.id, file_name);
+      const moved = await moveFile(temp_file_path, final);
+      const actualPath = moved ? final : temp_file_path;
+      await db('invoices').where({ id: invoice.id }).update({
+        source_file_path:        actualPath,
+        source_file_name:        file_name,
+        source_file_size:        file_size   || null,
+        source_file_type:        file_type   || null,
+        source_file_uploaded_at: new Date(),
+      });
+      invoice.has_file = true;
+    }
+
+    res.status(201).json({ ...invoice, has_file: !!(temp_file_path && supabase) });
   } catch (err) {
     console.error('POST /invoices', err);
     if (err.code === '23505') return res.status(409).json({ error: 'Duplicate invoice number for this vendor' });
@@ -225,9 +403,7 @@ router.put('/:id', async (req, res) => {
     const [inv] = await db('invoices').where({ id: req.params.id }).update(update).returning('*');
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
     res.json(inv);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error', detail: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: 'Server error', detail: err.message }); }
 });
 
 // ─── PATCH /:id/wing-assignment ───────────────────────────────────────────────
@@ -239,17 +415,27 @@ router.patch('/:id/wing-assignment', async (req, res) => {
       return res.status(409).json({ error: 'Wing assignment cannot be changed after payment is recorded.' });
 
     const { wing_assignment_mode, wing_id, wing_splits = [], line_items } = req.body;
+    if (!wing_assignment_mode) return res.status(400).json({ error: 'wing_assignment_mode required' });
+
     const total    = parseFloat(inv.total_amount);
+    const taxAmt   = parseFloat(inv.tax_amount) || 0;
     const exchRate = parseFloat(inv.exchange_rate) || 1;
-    const items    = line_items || (typeof inv.line_items === 'string' ? JSON.parse(inv.line_items||'[]') : inv.line_items) || [];
-    const primary  = primaryWing(wing_assignment_mode, wing_id, wing_splits, items);
+    const items    = line_items || (typeof inv.line_items === 'string' ? JSON.parse(inv.line_items || '[]') : inv.line_items) || [];
+
+    // Validate line_item mode — same guard as POST /
+    if (wing_assignment_mode === 'line_item') {
+      const unassigned = items.filter(i => parseFloat(i.amount || 0) > 0 && !i.business_wing_id);
+      if (unassigned.length)
+        return res.status(400).json({ error: `${unassigned.length} line item(s) missing wing assignment` });
+    }
+
+    const primary = primaryWing(wing_assignment_mode, wing_id, wing_splits, items);
 
     await db.transaction(async (trx) => {
       await trx('invoice_wing_splits').where({ invoice_id: req.params.id }).delete();
       const upd = { wing_assignment_mode, business_wing_id: primary };
       if (line_items) upd.line_items = JSON.stringify(line_items);
       await trx('invoices').where({ id: req.params.id }).update(upd);
-
       if (wing_assignment_mode === 'split' && wing_splits.length) {
         await trx('invoice_wing_splits').insert(wing_splits.map(w => ({
           invoice_id: req.params.id, business_wing_id: w.business_wing_id,
@@ -258,16 +444,13 @@ router.patch('/:id/wing-assignment', async (req, res) => {
         })));
       }
       if (wing_assignment_mode === 'line_item') {
-        const splits = splitsFromLineItems(items, total, inv.currency, exchRate);
+        const splits = splitsFromLineItems(items, total, taxAmt, inv.currency, exchRate);
         if (splits.length) await trx('invoice_wing_splits').insert(splits.map(s => ({ invoice_id: req.params.id, ...s })));
       }
     });
-
     const updated = await db('invoices').where({ id: req.params.id }).first();
     res.json(updated);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error', detail: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: 'Server error', detail: err.message }); }
 });
 
 // ─── PATCH /:id/status ────────────────────────────────────────────────────────
@@ -285,9 +468,7 @@ router.patch('/:id/status', async (req, res) => {
     }
     const [updated] = await db('invoices').where({ id: req.params.id }).update(update).returning('*');
     res.json(updated);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error', detail: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: 'Server error', detail: err.message }); }
 });
 
 // ─── POST /:id/receive (legacy compat) ───────────────────────────────────────
@@ -299,9 +480,7 @@ router.post('/:id/receive', async (req, res) => {
       .returning('*');
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
     res.json(inv);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error', detail: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: 'Server error', detail: err.message }); }
 });
 
 module.exports = router;

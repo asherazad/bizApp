@@ -1,0 +1,135 @@
+:root {
+
+  /* ── SURFACES ── */
+  --surface:        #FFFFFF;
+  --surface-2:      #F4F5FA;
+  --surface-3:      #ECEDF5;
+  --surface-hover:  #F0F1F9;
+
+  /* ── INK ── */
+  --ink:            #0D0F1A;
+  --ink-2:          #3D4056;
+  --ink-3:          #7B7E99;
+  --ink-4:          #B0B2C3;
+  /* gradient stops: dark navy midpoints between ink and electric */
+  --ink-navy:       #1A1C30;
+  --ink-indigo:     #22254A;
+
+  /* ── ACCENT — ELECTRIC VIOLET ── */
+  --electric:        #5B4FFF;
+  --electric-light:  #EAE8FF;
+  --electric-dark:   #3D32D9;
+  --electric-glow:   rgba(91, 79, 255, 0.15);
+  --electric-focus:  rgba(91, 79, 255, 0.10);
+  --electric-border: rgba(91, 79, 255, 0.20);
+  --electric-ring:   rgba(91, 79, 255, 0.25);
+  --electric-hover:  rgba(91, 79, 255, 0.35);
+
+  /* ── ACCENT 2 — LIME ── */
+  --lime:           #B8FF3C;
+  --lime-hover:     #C8FF5A;
+  --lime-glow:      rgba(184, 255, 60, 0.40);
+  --lime-dark:      #6E9E1A;
+  --lime-light:     #EFFFCC;
+
+  /* ── SEMANTIC ── */
+  --success:        #00C9A7;
+  --success-border: rgba(0, 201, 167, 0.30);
+  --success-light:  #E0FBF6;
+  --success-text:   #007A63;
+
+  --warning:        #FFAA00;
+  --warning-border: rgba(255, 170, 0, 0.25);
+  --warning-light:  #FFF4D9;
+  --warning-text:   #7A4F00;
+
+  --danger:         #FF5C5C;
+  --danger-hover:   #E03E3E;
+  --danger-glow:    rgba(255, 92, 92, 0.30);
+  --danger-light:   #FFE8E8;
+  --danger-text:    #991111;
+
+  --info:           #3CB9FF;
+  --info-light:     #E3F4FF;
+  --info-text:      #0066AA;
+
+  /* ── OVERLAYS ── */
+  --overlay:        rgba(13, 15, 26, 0.45);
+  --overlay-light:  rgba(13, 15, 26, 0.40);
+
+  /* ── SIDEBAR ── */
+  --sidebar-text:       rgba(255, 255, 255, 0.50);
+  --sidebar-text-active: rgba(255, 255, 255, 0.85);
+  --sidebar-text-muted: rgba(255, 255, 255, 0.35);
+  --sidebar-section:    rgba(255, 255, 255, 0.30);
+  --sidebar-hover:      rgba(255, 255, 255, 0.07);
+
+  /* ── WHITE ── */
+  --white:          #FFFFFF;
+
+  /* ── BORDERS ── */
+  --border:         rgba(13, 15, 26, 0.09);
+  --border-md:      rgba(13, 15, 26, 0.15);
+  --border-strong:  rgba(13, 15, 26, 0.25);
+
+  /* ── RADIUS ── */
+  --r-xs:  4px;
+  --r-sm:  6px;
+  --r:     8px;
+  --r-md:  10px;
+  --r-lg:  14px;
+
+  /* ── SPACING (8px grid) ── */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  20px;
+  --sp-6:  24px;
+  --sp-8:  32px;
+  --sp-10: 40px;
+
+  /* ── TYPOGRAPHY ── */
+  --font-body:    'DM Sans', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono:    'DM Mono', 'Fira Code', monospace;
+
+  /* ── TRANSITIONS ── */
+  --t-fast: 0.1s ease;
+  --t:      0.15s ease;
+  --t-slow: 0.25s ease;
+
+  /* ════════════════════════════════════════════
+     BACKWARD-COMPAT ALIASES
+     (existing pages use these — they now point
+      to the new design-system tokens)
+     ════════════════════════════════════════════ */
+
+  /* old --navy → electric purple */
+  --navy:         var(--electric);
+  --navy-dark:    var(--electric-dark);
+  --navy-light:   #6D64FF;
+
+  /* old amber accent → lime */
+  --amber:        var(--lime);
+  --amber-dark:   var(--lime-dark);
+  --amber-light:  var(--lime-light);
+
+  /* old surface/bg names */
+  --bg:           var(--surface-2);
+
+  /* old text names */
+  --text:         var(--ink);
+  --text-muted:   var(--ink-3);
+
+  /* old layout */
+  --sidebar-w:      220px;
+  --sidebar-rail-w: 56px;
+  --radius:         var(--r);
+
+  /* old shadows → subtle only */
+  --shadow:    none;
+  --shadow-sm: 0 2px 12px rgba(13, 15, 26, 0.12);
+  --shadow-md: 0 8px 32px rgba(13, 15, 26, 0.10);
+  --shadow-lg: 0 20px 60px rgba(13, 15, 26, 0.25);
+}

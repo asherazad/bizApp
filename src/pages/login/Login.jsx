@@ -26,47 +26,65 @@ export default function Login() {
 
   return (
     <div style={{
-      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(135deg, #152b47 0%, #1e3a5f 60%, #2a4f7e 100%)',
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'linear-gradient(135deg, var(--ink) 0%, var(--ink-navy) 60%, var(--ink-indigo) 100%)',
     }}>
       <div style={{ width: '100%', maxWidth: 400, padding: '0 20px' }}>
+
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <svg width="56" height="56" viewBox="0 0 32 32" fill="none" style={{ marginBottom: 12 }}>
-            <rect width="32" height="32" rx="8" fill="rgba(255,255,255,.1)"/>
-            <path d="M8 8h4l8 16h-4L8 8zm8 0h4l-8 16h-4l8-16z" fill="#f59e0b"/>
+          <svg width="52" height="52" viewBox="0 0 32 32" fill="none" style={{ marginBottom: 14 }}>
+            <rect width="32" height="32" rx="8" fill="var(--electric)"/>
+            <path d="M8 8h4l8 16h-4L8 8zm8 0h4l-8 16h-4l8-16z" fill="var(--lime)"/>
           </svg>
-          <h1 style={{ color: '#fff', fontSize: '1.75rem', letterSpacing: '-.5px' }}>
-            Ne<span style={{ color: '#f59e0b' }}>xus</span>
+          <h1 style={{ fontFamily: 'var(--font-display)', color: 'var(--white)', fontSize: '1.75rem', letterSpacing: '-0.5px' }}>
+            Nex<span style={{ color: 'var(--lime)' }}>us</span>
           </h1>
-          <p style={{ color: 'rgba(255,255,255,.55)', marginTop: 4, fontSize: 13 }}>
+          <p style={{ color: 'var(--sidebar-text)', marginTop: 4, fontSize: 13 }}>
             Business Operations Platform
           </p>
         </div>
 
         {/* Card */}
-        <form onSubmit={handleSubmit} className="card" style={{ padding: 28 }}>
-          <h2 style={{ marginBottom: 20, color: 'var(--text)' }}>Sign In</h2>
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            background: 'var(--surface)',
+            borderRadius: 'var(--r-lg)',
+            border: '1px solid var(--border-md)',
+            padding: '28px 28px 24px',
+          }}
+        >
+          <h2 style={{ marginBottom: 20, fontFamily: 'var(--font-display)' }}>Sign In</h2>
 
           <div className="form-group" style={{ marginBottom: 14 }}>
             <label className="form-label">Email</label>
             <input
-              type="email" className="form-control" required
+              type="email"
+              className="form-control"
+              required
               placeholder="admin@nexus.local"
-              value={email} onChange={(e) => setEmail(e.target.value)}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
             />
           </div>
 
-          <div className="form-group" style={{ marginBottom: 20 }}>
+          <div className="form-group" style={{ marginBottom: 22 }}>
             <label className="form-label">Password</label>
             <input
-              type="password" className="form-control" required
+              type="password"
+              className="form-control"
+              required
               placeholder="••••••••"
-              value={password} onChange={(e) => setPassword(e.target.value)}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
             />
           </div>
 
-          <button type="submit" className="btn btn-primary w-full" disabled={loading}>
+          <button type="submit" className="btn btn-primary w-full" style={{ height: 42 }} disabled={loading}>
             {loading ? 'Signing in…' : 'Sign In'}
           </button>
         </form>

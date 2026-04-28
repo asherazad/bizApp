@@ -35,41 +35,47 @@ export default function Sidebar() {
 
   return (
     <aside className="sidebar">
+      {/* Logo */}
       <div className="sidebar-logo">
-        <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
-          <rect width="32" height="32" rx="8" fill="#1e3a5f"/>
-          <path d="M8 8h4l8 16h-4L8 8zm8 0h4l-8 16h-4l8-16z" fill="#f59e0b"/>
+        <svg width="26" height="26" viewBox="0 0 32 32" fill="none">
+          <rect width="32" height="32" rx="7" fill="var(--electric)"/>
+          <path d="M8 8h4l8 16h-4L8 8zm8 0h4l-8 16h-4l8-16z" fill="var(--lime)"/>
         </svg>
-        <span className="sidebar-logo-text">Ne<span>xus</span></span>
+        <span className="sidebar-logo-text">Nex<span>us</span></span>
       </div>
 
+      {/* Nav */}
       <nav className="sidebar-nav">
         {NAV.map((item, i) => {
-          if (item.section) return <div key={i} className="sidebar-section">{item.section}</div>;
+          if (item.section) return (
+            <div key={i} className="sidebar-section">{item.section}</div>
+          );
           return (
             <NavLink
               key={item.to}
               to={item.to}
-              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+              title={item.label}
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
             >
-              <item.icon className="nav-icon" size={16} />
-              {item.label}
+              <item.icon className="nav-icon" size={16}/>
+              <span className="nav-label">{item.label}</span>
             </NavLink>
           );
         })}
       </nav>
 
-      <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,.1)' }}>
-        <div style={{ fontSize: 12, color: 'rgba(255,255,255,.5)', marginBottom: 8 }}>
-          {user?.name}
+      {/* User footer */}
+      <div style={{ padding: '12px 8px', borderTop: '1px solid var(--sidebar-hover)' }}>
+        <div className="sidebar-user-email" style={{ padding: '6px 12px', fontSize: 12, color: 'var(--sidebar-text-muted)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {user?.name || user?.email}
         </div>
         <button
           className="nav-item"
+          title="Sign Out"
           onClick={() => { logout(); navigate('/login'); }}
-          style={{ color: 'rgba(255,255,255,.6)' }}
         >
-          <LogOut size={16} />
-          Sign Out
+          <LogOut size={15}/>
+          <span className="nav-label">Sign Out</span>
         </button>
       </div>
     </aside>

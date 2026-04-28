@@ -6,6 +6,7 @@ import { formatCurrency, formatDate, statusBadgeClass } from '../../lib/format';
 import { Plus, Upload, Filter } from 'lucide-react';
 import InvoiceWizard from './InvoiceWizard';
 import InvoiceDetail from './InvoiceDetail';
+import InvoiceFileViewer from '../../components/InvoiceFileViewer';
 
 const STATUSES   = ['', 'Pending', 'Received', 'Overdue', 'Disputed'];
 const CURRENCIES = ['', 'PKR', 'USD', 'EUR', 'AED', 'GBP'];
@@ -152,14 +153,15 @@ export default function Invoices() {
                 <th style={{ textAlign: 'right' }}>Amount</th>
                 <th>PO</th>
                 <th>Status</th>
+                <th>File</th>
                 <th/>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} className="text-muted" style={{ textAlign: 'center', padding: 32 }}>Loading…</td></tr>
+                <tr><td colSpan={11} className="text-muted" style={{ textAlign: 'center', padding: 32 }}>Loading…</td></tr>
               ) : displayed.length === 0 ? (
-                <tr><td colSpan={10} className="text-muted" style={{ textAlign: 'center', padding: 32 }}>No invoices found</td></tr>
+                <tr><td colSpan={11} className="text-muted" style={{ textAlign: 'center', padding: 32 }}>No invoices found</td></tr>
               ) : displayed.map(inv => (
                 <tr key={inv.id} style={{ cursor: 'pointer' }} onClick={() => setModal(inv.id)}>
                   <td style={{ fontWeight: 600 }}>{inv.invoice_number}</td>
@@ -174,6 +176,19 @@ export default function Invoices() {
                   </td>
                   <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{inv.po_number || '—'}</td>
                   <td><span className={`badge ${statusBadgeClass(inv.status?.toLowerCase())}`}>{inv.status}</span></td>
+                  <td onClick={e => e.stopPropagation()}>
+                    {inv.has_file ? (
+                      <InvoiceFileViewer
+                        invoiceId={inv.id}
+                        fileName={inv.source_file_name}
+                        fileType={inv.source_file_type}
+                        fileSize={inv.source_file_size}
+                        trigger="icon"
+                      />
+                    ) : (
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
+                    )}
+                  </td>
                   <td onClick={e => e.stopPropagation()}>
                     <button className="btn btn-secondary btn-sm" style={{ padding: '4px 8px' }} onClick={() => setModal(inv.id)}>
                       View
