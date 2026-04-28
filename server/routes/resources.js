@@ -43,7 +43,6 @@ function normaliseRow(row, wings) {
     gross_salary:      parseFloat(row['Gross Salary']) || 0,
     tax_amount:        parseFloat(row['Tax']) || 0,
     net_salary:        parseFloat(row['Net Salary Payable (PKR)'] || row['Net Salary Payable']) || 0,
-    is_active:         true,
   };
 }
 
@@ -115,7 +114,7 @@ router.get('/', async (req, res) => {
         'resources.job_type', 'resources.employment_status',
         'resources.join_date', 'resources.gross_salary',
         'resources.tax_amount', 'resources.net_salary',
-        'resources.is_active', 'resources.created_at',
+        'resources.created_at',
         'business_wings.name as wing_name', 'business_wings.code as wing_code'
       )
       .orderByRaw('resources.resource_seq_id ASC NULLS LAST, resources.full_name ASC NULLS LAST');
@@ -177,7 +176,6 @@ router.post('/', async (req, res) => {
       gross_salary: parseFloat(gross_salary) || 0,
       tax_amount:   parseFloat(tax_amount)   || 0,
       net_salary:   parseFloat(net_salary)   || 0,
-      is_active: true,
     }).returning('*');
 
     res.status(201).json(resource);
@@ -194,7 +192,7 @@ router.put('/:id', async (req, res) => {
       'business_wing_id', 'full_name', 'cnic', 'designation',
       'account_number', 'bank_name', 'mode_of_transfer',
       'job_type', 'employment_status', 'join_date',
-      'gross_salary', 'tax_amount', 'net_salary', 'is_active',
+      'gross_salary', 'tax_amount', 'net_salary',
     ];
     const update = Object.fromEntries(allowed.filter(k => k in req.body).map(k => [k, req.body[k]]));
     const [resource] = await db('resources').where({ id: req.params.id }).update(update).returning('*');
