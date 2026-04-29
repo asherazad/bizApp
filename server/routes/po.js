@@ -75,11 +75,10 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const { po_title, po_number, status, client_id, currency, exchange_rate, po_value, issue_date, expiry_date, notes } = req.body;
+    const { po_title, po_number, client_id, currency, exchange_rate, po_value, issue_date, expiry_date, notes } = req.body;
     const updates = {};
     if (po_title    !== undefined) updates.po_title    = po_title;
     if (po_number   !== undefined) updates.po_number   = po_number;
-    if (status      !== undefined) updates.status      = status;
     if (client_id   !== undefined) updates.client_id   = client_id || null;
     if (currency    !== undefined) updates.currency    = currency;
     if (issue_date  !== undefined) updates.issue_date  = issue_date;

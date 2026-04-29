@@ -19,7 +19,7 @@ function POModal({ po, wings, onClose, onSaved }) {
     issue_date:  po?.issue_date       || new Date().toISOString().split('T')[0],
     expiry_date: po?.expiry_date      || '',
     po_value:    String(po?.po_value  ?? ''),
-    status:      po?.status           || 'draft',
+    status:      po?.status           || 'active',
     notes:       po?.notes            || '',
   });
   const [items, setItems] = useState([{ description: '', quantity: '1', unit_price: '', amount: '' }]);
@@ -68,7 +68,6 @@ function POModal({ po, wings, onClose, onSaved }) {
           po_value:     form.po_value,
           issue_date:   form.issue_date,
           expiry_date:  form.expiry_date || null,
-          status:       form.status,
           notes:        form.notes,
         });
         toast('PO updated', 'success');
@@ -164,15 +163,6 @@ function POModal({ po, wings, onClose, onSaved }) {
               </div>
             )}
 
-            {isEdit && (
-              <div className="form-group"><label className="form-label">Status</label>
-                <select className="form-control" value={form.status} onChange={f('status')}>
-                  {['draft', 'sent', 'acknowledged', 'partially_invoiced', 'fully_invoiced', 'cancelled'].map((s) => (
-                    <option key={s} value={s}>{formatStatus(s)}</option>
-                  ))}
-                </select>
-              </div>
-            )}
             <div className="form-group"><label className="form-label">Notes</label>
               <textarea className="form-control" rows={2} value={form.notes} onChange={f('notes')} />
             </div>
