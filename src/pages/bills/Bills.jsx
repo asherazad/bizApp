@@ -61,12 +61,86 @@ function BillModal({ wings, onClose, onSaved }) {
   );
 }
 
+function PayBillModal({ bill, onClose, onDone }) {
+  const toast = useToast();
+  const [accounts,      setAccounts]      = useState([]);
+  const [bankAccountId, setBankAccountId] = useState('');
+  const [paymentDate,   setPaymentDate]   = useState(new Date().toISOString().split('T')[0]);
+  const [saving,        setSaving]        = useState(false);
+
+  useEffect(() => {
+    api.get('/banks/accounts').then(r => setAccounts(r.data)).catch(() => {});
+  }, []);
+
+  async function confirm() {
+    if (!bankAccountId) { toast('Select a bank account', 'error'); return; }
+    setSaving(true);
+    try {
+      await api.put(`/bills/${bill.id}`, { status: 'paid', payment_date: paymentDate, bank_account_id: bankAccountId });
+      toast('Bill paid — bank debited', 'success');
+      onDone();
+    } catch (err) {
+      toast(err.response?.data?.detail || err.response?.data?.error || 'Error', 'error');
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3 style={{ margin: 0 }}>Pay Bill</h3>
+          <button className="btn btn-secondary btn-sm" onClick={onClose}>✕</button>
+        </div>
+        <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px' }}>
+            <div style={{ fontWeight: 600, marginBottom: 2 }}>{bill.bill_type}</div>
+            <div className="text-muted" style={{ fontSize: 13, marginBottom: 8 }}>{bill.description}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span className="text-muted" style={{ fontSize: 12 }}>Due</span>
+              <span style={{ fontSize: 12 }}>{formatDate(bill.due_date)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
+              <span style={{ fontWeight: 600 }}>Amount</span>
+              <span style={{ fontWeight: 700, color: 'var(--danger)' }}>{formatCurrency(bill.amount)}</span>
+            </div>
+          </div>
+
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Debit from Bank Account *</label>
+            <select className="form-control" required value={bankAccountId} onChange={e => setBankAccountId(e.target.value)}>
+              <option value="">Select account…</option>
+              {accounts.map(a => (
+                <option key={a.id} value={a.id}>
+                  {a.bank_name} — {a.account_title} ({formatCurrency(a.current_balance, a.currency)})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Payment Date</label>
+            <input type="date" className="form-control" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+            <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+            <button className="btn btn-primary" onClick={confirm} disabled={saving || !bankAccountId}>
+              {saving ? 'Processing…' : `Pay ${formatCurrency(bill.amount)}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Bills() {
   const { activeWing, wings } = useAuth();
   const toast = useToast();
-  const [bills, setBills] = useState([]);
-  const [modal, setModal] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [bills,      setBills]      = useState([]);
+  const [modal,      setModal]      = useState(false);
+  const [payTarget,  setPayTarget]  = useState(null);
+  const [loading,    setLoading]    = useState(true);
 
   async function load() {
     setLoading(true);
@@ -76,13 +150,6 @@ export default function Bills() {
     finally { setLoading(false); }
   }
   useEffect(() => { load(); }, [activeWing]);
-
-  async function markPaid(bill) {
-    try {
-      await api.put(`/bills/${bill.id}`, { status: 'paid', paid_date: new Date().toISOString().split('T')[0] });
-      toast('Marked as paid', 'success'); load();
-    } catch { toast('Error', 'error'); }
-  }
 
   return (
     <div>
@@ -105,14 +172,15 @@ export default function Bills() {
                     <td className="text-muted">{formatDate(b.due_date)}</td>
                     <td className="font-mono">{formatCurrency(b.amount)}</td>
                     <td><span className={`badge ${statusBadgeClass(b.status)}`}>{formatStatus(b.status)}</span></td>
-                    <td>{b.status !== 'paid' && <button className="btn btn-secondary btn-sm" onClick={() => markPaid(b)}>Mark Paid</button>}</td>
+                    <td>{b.status !== 'paid' && <button className="btn btn-primary btn-sm" onClick={() => setPayTarget(b)}>Pay</button>}</td>
                   </tr>
                 ))}
             </tbody>
           </table>
         </div>
       </div>
-      {modal && <BillModal wings={wings} onClose={() => setModal(false)} onSaved={() => { setModal(false); load(); }} />}
+      {modal     && <BillModal    wings={wings} onClose={() => setModal(false)}    onSaved={() => { setModal(false); load(); }} />}
+      {payTarget && <PayBillModal bill={payTarget} onClose={() => setPayTarget(null)} onDone={() => { setPayTarget(null); load(); }} />}
     </div>
   );
 }

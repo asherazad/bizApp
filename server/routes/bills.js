@@ -41,13 +41,41 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { status, payment_date, bank_account_id, reference, notes } = req.body;
-    const [bill] = await db('bill_payments').where({ id: req.params.id })
-      .update({ status, payment_date, bank_account_id, reference, notes })
-      .returning('*');
+
+    const bill = await db('bill_payments').where({ id: req.params.id }).first();
     if (!bill) return res.status(404).json({ error: 'Not found' });
-    res.json(bill);
+
+    await db.transaction(async trx => {
+      await trx('bill_payments').where({ id: req.params.id })
+        .update({ status, payment_date, bank_account_id, reference, notes });
+
+      if (status === 'paid' && bank_account_id) {
+        const account = await trx('bank_accounts').where({ id: bank_account_id }).first();
+        if (!account) throw new Error('Bank account not found');
+
+        const amt = parseFloat(bill.amount) || 0;
+        const newBalance = parseFloat(account.current_balance) - amt;
+
+        await trx('bank_transactions').insert({
+          bank_account_id,
+          business_wing_id: bill.business_wing_id,
+          txn_type:         'Debit',
+          amount:           amt,
+          currency:         account.currency || 'PKR',
+          description:      `Bill Payment — ${bill.bill_type}: ${bill.description}`,
+          reference_type:   'bill',
+          txn_date:         payment_date || new Date().toISOString().split('T')[0],
+          running_balance:  newBalance,
+        });
+
+        await trx('bank_accounts').where({ id: bank_account_id })
+          .update({ current_balance: newBalance });
+      }
+    });
+
+    res.json({ message: 'Bill updated' });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
