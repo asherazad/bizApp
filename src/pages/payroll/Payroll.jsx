@@ -233,11 +233,12 @@ function RunPayrollTab({ wings, activeWing, toast }) {
 function BankLetterTab({ wings, activeWing, toast }) {
   const [monthYear,    setMonthYear]    = useState(currentMonthYear());
   const [wingId,       setWingId]       = useState(activeWing?.id || '');
-  const [bankName,     setBankName]     = useState('Meezan Bank Limited');
+  const [selectedBank, setSelectedBank] = useState('');
+  const [bankName,     setBankName]     = useState('');
   const [companyName,  setCompanyName]  = useState('Raheem Solutions (Pvt.) Ltd.');
   const [accountNo,    setAccountNo]    = useState('');
   const [chequeNo,     setChequeNo]     = useState('');
-  const [rows,         setRows]         = useState([]);
+  const [allRows,      setAllRows]      = useState([]);
   const [loading,      setLoading]      = useState(false);
 
   async function load() {
@@ -246,7 +247,15 @@ function BankLetterTab({ wings, activeWing, toast }) {
       const { data } = await api.get('/payroll/preview', {
         params: { month_year: monthYear, ...(wingId ? { wing_id: wingId } : {}) },
       });
-      setRows(data.filter(r => (r.employment_status || '').toLowerCase() !== '3rd party'));
+      // Exclude 3rd party, keep rest for bank filtering
+      const eligible = data.filter(r => (r.employment_status || '').toLowerCase() !== '3rd party');
+      setAllRows(eligible);
+      // Auto-select first bank if none chosen yet
+      if (!selectedBank && eligible.length) {
+        const firstBank = eligible.find(r => r.bank_name)?.bank_name || '';
+        setSelectedBank(firstBank);
+        setBankName(firstBank);
+      }
     } catch (err) {
       toast(err.response?.data?.detail || 'Failed to load', 'error');
     } finally { setLoading(false); }
@@ -254,8 +263,22 @@ function BankLetterTab({ wings, activeWing, toast }) {
 
   useEffect(() => { if (monthYear) load(); }, [monthYear, wingId]);
 
-  const total   = rows.reduce((s, r) => s + (parseFloat(r.net_salary) || 0), 0);
-  const today   = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  // Derive unique bank names from loaded resources
+  const availableBanks = [...new Set(allRows.map(r => r.bank_name).filter(Boolean))].sort();
+
+  // Filter to selected bank
+  const rows = selectedBank
+    ? allRows.filter(r => (r.bank_name || '').toLowerCase() === selectedBank.toLowerCase())
+    : allRows;
+
+  function handleBankSelect(e) {
+    const val = e.target.value;
+    setSelectedBank(val);
+    setBankName(val); // pre-fill the formal bank name field
+  }
+
+  const total = rows.reduce((s, r) => s + (parseFloat(r.net_salary) || 0), 0);
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
   function printLetter() {
     const win = window.open('', '_blank', 'width=920,height=720');
@@ -271,7 +294,8 @@ function BankLetterTab({ wings, activeWing, toast }) {
 <title>Bank Letter — ${monthSlug(monthYear)}</title>
 <style>
   * { box-sizing: border-box; }
-  body { font-family: Arial, sans-serif; font-size: 13px; color: #111; padding: 40px 60px; line-height: 1.7; }
+  body { font-family: Arial, sans-serif; font-size: 13px; color: #111; padding: 0 60px 40px; line-height: 1.7; }
+  .letterhead-space { height: 130px; }
   .header { display: flex; justify-content: space-between; margin-bottom: 28px; }
   .subject-block { margin: 20px 0 16px; }
   p { margin: 0 0 16px; }
@@ -282,13 +306,14 @@ function BankLetterTab({ wings, activeWing, toast }) {
   .total-row td { font-weight: 700; border-top: 2px solid #333; background: #ececec; }
   .sig { margin-top: 56px; }
   .sig-line { margin-top: 48px; border-top: 1px solid #333; width: 180px; padding-top: 4px; font-size: 12px; }
-  @media print { body { padding: 20px 40px; } }
+  @media print { body { padding: 0 40px 20px; } }
 </style></head><body>
+<div class="letterhead-space"></div>
 <div class="header">
   <div>
     <div>To,</div>
     <div style="margin-top:10px"><strong>The Bank Manager</strong></div>
-    <div>${bankName}</div>
+    <div>${bankName || selectedBank}</div>
   </div>
   <div style="text-align:right">Date: ${today}</div>
 </div>
@@ -331,8 +356,8 @@ against staff salaries as per list.</p>
 
   return (
     <div>
-      {/* Controls */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+      {/* Controls row 1 — month / wing / bank filter */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div className="form-group" style={{ margin: 0 }}>
           <label className="form-label">Month</label>
           <input type="month" className="form-control" value={monthYear} onChange={e => setMonthYear(e.target.value)} />
@@ -347,12 +372,28 @@ against staff salaries as per list.</p>
           </div>
         )}
         <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label">Bank Name</label>
-          <input className="form-control" style={{ width: 210 }} value={bankName} onChange={e => setBankName(e.target.value)} />
+          <label className="form-label">Filter by Bank *</label>
+          <select className="form-control" style={{ width: 220 }} value={selectedBank} onChange={handleBankSelect}>
+            <option value="">— All Banks —</option>
+            {availableBanks.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
+        </div>
+        {selectedBank && (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', alignSelf: 'center', paddingBottom: 4 }}>
+            {rows.length} resource{rows.length !== 1 ? 's' : ''} · Rs. {fmt(total)}
+          </div>
+        )}
+      </div>
+
+      {/* Controls row 2 — letter details */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div className="form-group" style={{ margin: 0 }}>
+          <label className="form-label">Bank Name (in letter)</label>
+          <input className="form-control" style={{ width: 220 }} value={bankName} onChange={e => setBankName(e.target.value)} placeholder="e.g. Meezan Bank Limited" />
         </div>
         <div className="form-group" style={{ margin: 0 }}>
           <label className="form-label">Company Name</label>
-          <input className="form-control" style={{ width: 250 }} value={companyName} onChange={e => setCompanyName(e.target.value)} />
+          <input className="form-control" style={{ width: 260 }} value={companyName} onChange={e => setCompanyName(e.target.value)} />
         </div>
         <div className="form-group" style={{ margin: 0 }}>
           <label className="form-label">Company Account No.</label>
@@ -371,7 +412,9 @@ against staff salaries as per list.</p>
       <div className="card" style={{ padding: 0 }}>
         <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontWeight: 600, fontSize: 13 }}>
-            {monthLabel(monthYear)} · {rows.length} transfers (3rd party excluded)
+            {monthLabel(monthYear)}
+            {selectedBank ? ` · ${selectedBank}` : ' · All Banks'}
+            {' '}· {rows.length} transfers (3rd party excluded)
           </span>
           <span style={{ fontWeight: 700, color: 'var(--success)' }}>Rs. {fmt(total)}</span>
         </div>
@@ -391,7 +434,9 @@ against staff salaries as per list.</p>
                 <tr><td colSpan={5} style={{ textAlign: 'center', padding: 32 }} className="text-muted">Loading…</td></tr>
               ) : rows.length === 0 ? (
                 <tr><td colSpan={5} style={{ textAlign: 'center', padding: 40 }} className="text-muted">
-                  No resources found. Make sure resources have salaries set in the Resources module.
+                  {allRows.length > 0
+                    ? 'No resources match the selected bank filter.'
+                    : 'No resources found. Make sure resources have salaries set in the Resources module.'}
                 </td></tr>
               ) : rows.map((r, i) => (
                 <tr key={r.resource_id}>
