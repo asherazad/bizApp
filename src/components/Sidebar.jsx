@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, Building2, Landmark, Users2, FileText,
   ShoppingCart, Receipt, UserCheck, Calendar, Wallet,
-  CreditCard, Plane, RefreshCw, Bell, Users, LogOut,
+  CreditCard, Plane, RefreshCw, Bell, Users, LogOut, HandCoins,
 } from 'lucide-react';
 
 const NAV = [
@@ -18,6 +18,7 @@ const NAV = [
   { section: 'HR' },
   { to: '/resources',       icon: UserCheck,        label: 'Resources' },
   { to: '/attendance',      icon: Calendar,         label: 'Attendance' },
+  { to: '/loans',           icon: HandCoins,        label: 'Loans & Advances' },
   { to: '/payroll',         icon: Wallet,           label: 'Payroll & Loans' },
   { section: 'Operations' },
   { to: '/travel',          icon: Plane,            label: 'Travel' },

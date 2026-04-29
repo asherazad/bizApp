@@ -12,6 +12,7 @@ import Tax from './pages/tax/Tax';
 import Resources from './pages/resources/Resources';
 import Attendance from './pages/attendance/Attendance';
 import Payroll from './pages/payroll/Payroll';
+import Loans from './pages/loans/Loans';
 import Bills from './pages/bills/Bills';
 import Travel from './pages/travel/Travel';
 import Subscriptions from './pages/subscriptions/Subscriptions';
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/resources"        element={<Resources />} />
           <Route path="/attendance"       element={<Attendance />} />
           <Route path="/payroll"          element={<Payroll />} />
+          <Route path="/loans"            element={<Loans />} />
           <Route path="/bills"            element={<Bills />} />
           <Route path="/travel"           element={<Travel />} />
           <Route path="/subscriptions"    element={<Subscriptions />} />

@@ -13,6 +13,7 @@ const TITLES = {
   '/resources':       'Resources & HR',
   '/attendance':      'Attendance & Leave',
   '/payroll':         'Payroll & Loans',
+  '/loans':           'Loans & Advances',
   '/bills':           'Bill Payments',
   '/travel':          'Travel Records',
   '/subscriptions':   'Monthly Subscriptions',
