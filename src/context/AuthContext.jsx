@@ -10,10 +10,20 @@ export function AuthProvider({ children }) {
   const [wings, setWings] = useState(() => {
     try { return JSON.parse(localStorage.getItem('nexus_wings')) || []; } catch { return []; }
   });
-  const [activeWing, setActiveWing] = useState(() => {
-    const wings = JSON.parse(localStorage.getItem('nexus_wings') || '[]');
-    return wings[0] || null;
+  const [activeWing, setActiveWingState] = useState(() => {
+    try {
+      const w = JSON.parse(localStorage.getItem('nexus_wings') || '[]');
+      const saved = JSON.parse(localStorage.getItem('nexus_active_wing') || 'null');
+      if (saved && w.find(x => x.id === saved.id)) return saved;
+      return w[0] || null;
+    } catch { return null; }
   });
+
+  const setActiveWing = useCallback((wing) => {
+    if (wing) localStorage.setItem('nexus_active_wing', JSON.stringify(wing));
+    else      localStorage.removeItem('nexus_active_wing');
+    setActiveWingState(wing);
+  }, []);
 
   // Refresh wings from server on mount (handles stale localStorage)
   useEffect(() => {
@@ -22,7 +32,14 @@ export function AuthProvider({ children }) {
       const fresh = data.wings || [];
       localStorage.setItem('nexus_wings', JSON.stringify(fresh));
       setWings(fresh);
-      setActiveWing((prev) => prev || fresh[0] || null);
+      setActiveWingState(prev => {
+        if (prev && fresh.find(x => x.id === prev.id)) return prev;
+        try {
+          const saved = JSON.parse(localStorage.getItem('nexus_active_wing') || 'null');
+          if (saved && fresh.find(x => x.id === saved.id)) return saved;
+        } catch {}
+        return fresh[0] || null;
+      });
     }).catch(() => {});
   }, []);
 
@@ -33,7 +50,10 @@ export function AuthProvider({ children }) {
     localStorage.setItem('nexus_wings', JSON.stringify(data.wings));
     setUser(data.user);
     setWings(data.wings);
-    setActiveWing(data.wings[0] || null);
+    // restore previously selected wing if it still exists, otherwise first wing
+    const saved = (() => { try { return JSON.parse(localStorage.getItem('nexus_active_wing') || 'null'); } catch { return null; } })();
+    const wing  = (saved && data.wings.find(x => x.id === saved.id)) ? saved : (data.wings[0] || null);
+    setActiveWing(wing);
     return data;
   }, []);
 
@@ -49,9 +69,10 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('nexus_token');
     localStorage.removeItem('nexus_user');
     localStorage.removeItem('nexus_wings');
+    localStorage.removeItem('nexus_active_wing');
     setUser(null);
     setWings([]);
-    setActiveWing(null);
+    setActiveWingState(null);
   }, []);
 
   return (
