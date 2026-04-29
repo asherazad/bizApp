@@ -53,14 +53,29 @@ router.post('/accounts', async (req, res) => {
 
 router.put('/accounts/:id', async (req, res) => {
   try {
-    const { bank_name, account_title, is_active, is_shared } = req.body;
+    const allowed = ['bank_name', 'account_title', 'account_number_last4', 'branch', 'is_active', 'is_shared'];
+    const update = Object.fromEntries(allowed.filter(k => k in req.body).map(k => [k, req.body[k]]));
+    if (!Object.keys(update).length) return res.status(400).json({ error: 'Nothing to update' });
     const [account] = await db('bank_accounts').where({ id: req.params.id })
-      .update({ bank_name, account_title, is_active, is_shared })
-      .returning('*');
+      .update(update).returning('*');
     if (!account) return res.status(404).json({ error: 'Account not found' });
     res.json(account);
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
+  }
+});
+
+router.delete('/accounts/:id', async (req, res) => {
+  try {
+    const txnCount = await db('bank_transactions').where({ bank_account_id: req.params.id }).count('id as n').first();
+    if (parseInt(txnCount.n) > 0) {
+      return res.status(400).json({ error: `Cannot delete — account has ${txnCount.n} transaction(s). Delete transactions first.` });
+    }
+    const n = await db('bank_accounts').where({ id: req.params.id }).delete();
+    if (!n) return res.status(404).json({ error: 'Account not found' });
+    res.json({ message: 'Account deleted' });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 

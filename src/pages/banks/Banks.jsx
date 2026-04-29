@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
-import { Plus, Landmark, ArrowUpRight, ArrowDownLeft, ArrowLeftRight } from 'lucide-react';
+import { Plus, Landmark, ArrowUpRight, ArrowDownLeft, ArrowLeftRight, Pencil, Trash2 } from 'lucide-react';
 
 function AccountModal({ onClose, onSaved, wings }) {
   const toast = useToast();
@@ -42,6 +42,49 @@ function AccountModal({ onClose, onSaved, wings }) {
               </div>
               <div className="form-group"><label className="form-label">Opening Balance</label><input type="number" className="form-control" value={form.opening_balance} onChange={f('opening_balance')} /></div>
             </div>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function EditAccountModal({ account, wings, onClose, onSaved }) {
+  const toast = useToast();
+  const [form, setForm] = useState({
+    bank_name:            account.bank_name        || '',
+    account_title:        account.account_title    || '',
+    account_number_last4: account.account_number_last4 || '',
+    branch:               account.branch           || '',
+  });
+  const [saving, setSaving] = useState(false);
+  function f(k) { return (e) => setForm(p => ({ ...p, [k]: e.target.value })); }
+  async function submit(e) {
+    e.preventDefault(); setSaving(true);
+    try {
+      await api.put(`/banks/accounts/${account.id}`, form);
+      toast('Account updated', 'success');
+      onSaved();
+    } catch (err) {
+      toast(err.response?.data?.error || 'Error', 'error');
+    } finally { setSaving(false); }
+  }
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header"><h3>Edit Bank Account</h3><button className="btn btn-secondary btn-sm" onClick={onClose}>✕</button></div>
+        <form onSubmit={submit}>
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="grid-2">
+              <div className="form-group"><label className="form-label">Bank Name *</label><input className="form-control" required value={form.bank_name} onChange={f('bank_name')} /></div>
+              <div className="form-group"><label className="form-label">Account Number</label><input className="form-control" value={form.account_number_last4} onChange={f('account_number_last4')} /></div>
+            </div>
+            <div className="form-group"><label className="form-label">Account Title *</label><input className="form-control" required value={form.account_title} onChange={f('account_title')} /></div>
+            <div className="form-group"><label className="form-label">Branch</label><input className="form-control" value={form.branch} onChange={f('branch')} /></div>
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
@@ -168,6 +211,9 @@ export default function Banks() {
   const [selected, setSelected]     = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [modal, setModal]           = useState(null);
+  const [editTarget, setEditTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting]     = useState(false);
   const [txnModal, setTxnModal]     = useState(false);
   const [transferModal, setTransferModal] = useState(false);
   const [loading, setLoading]       = useState(true);
@@ -184,6 +230,19 @@ export default function Banks() {
     if (!accountId) return;
     try { setTransactions((await api.get('/banks/transactions', { params: { bank_account_id: accountId } })).data); }
     catch { toast('Failed to load transactions', 'error'); }
+  }
+
+  async function deleteAccount(id) {
+    setDeleting(true);
+    try {
+      await api.delete(`/banks/accounts/${id}`);
+      toast('Account deleted', 'success');
+      setDeleteTarget(null);
+      if (selected?.id === id) setSelected(null);
+      loadAccounts();
+    } catch (err) {
+      toast(err.response?.data?.error || 'Error deleting account', 'error');
+    } finally { setDeleting(false); }
   }
 
   useEffect(() => { loadAccounts(); }, [activeWing]);
@@ -205,12 +264,20 @@ export default function Banks() {
         {accounts.map((a) => (
           <div key={a.id} onClick={() => setSelected(a)}
             className={`card ${selected?.id === a.id ? 'border-navy' : ''}`}
-            style={{ padding: 16, cursor: 'pointer', minWidth: 200, border: selected?.id === a.id ? '2px solid var(--navy)' : undefined }}>
-            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>{a.wing_name}</div>
+            style={{ padding: 16, cursor: 'pointer', minWidth: 220, border: selected?.id === a.id ? '2px solid var(--navy)' : undefined, position: 'relative' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>{a.wing_name}</div>
+              <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
+                <button className="btn btn-secondary btn-sm" style={{ padding: '2px 6px' }} onClick={() => setEditTarget(a)} title="Edit"><Pencil size={12} /></button>
+                <button className="btn btn-secondary btn-sm" style={{ padding: '2px 6px', color: 'var(--danger, #dc3545)' }} onClick={() => setDeleteTarget(a)} title="Delete"><Trash2 size={12} /></button>
+              </div>
+            </div>
             <div style={{ fontWeight: 600 }}>{a.bank_name}</div>
             <div className="text-muted">{a.account_title}</div>
+            {a.account_number_last4 && <div className="text-muted" style={{ fontSize: 12 }}>A/C: {a.account_number_last4}</div>}
+            {a.branch && <div className="text-muted" style={{ fontSize: 12 }}>{a.branch}</div>}
             <div style={{ fontSize: '1.1rem', fontWeight: 700, color: a.current_balance < 0 ? 'var(--danger, #dc3545)' : 'var(--navy)', marginTop: 6 }}>
-              {formatCurrency(a.current_balance, a.currency_code)}
+              {formatCurrency(a.current_balance, a.currency_code || a.currency)}
             </div>
           </div>
         ))}
@@ -254,8 +321,25 @@ export default function Banks() {
       )}
 
       {modal && <AccountModal wings={wings} onClose={() => setModal(false)} onSaved={() => { setModal(false); loadAccounts(); }} />}
+      {editTarget && <EditAccountModal account={editTarget} wings={wings} onClose={() => setEditTarget(null)} onSaved={() => { setEditTarget(null); loadAccounts(); }} />}
       {txnModal && <TxnModal account={selected} wings={wings} onClose={() => setTxnModal(false)} onSaved={() => { setTxnModal(false); loadTxns(selected?.id); loadAccounts(); }} />}
       {transferModal && selected && <TransferModal fromAccount={selected} onClose={() => setTransferModal(false)} onSaved={() => { setTransferModal(false); loadTxns(selected?.id); loadAccounts(); }} />}
+
+      {deleteTarget && (
+        <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
+          <div className="modal" style={{ maxWidth: 400 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h3>Delete Account</h3><button className="btn btn-secondary btn-sm" onClick={() => setDeleteTarget(null)}>✕</button></div>
+            <div className="modal-body">
+              <p>Delete <strong>{deleteTarget.bank_name} — {deleteTarget.account_title}</strong>?</p>
+              <p className="text-muted" style={{ fontSize: 13 }}>This cannot be undone. Accounts with existing transactions cannot be deleted.</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button className="btn btn-danger" disabled={deleting} onClick={() => deleteAccount(deleteTarget.id)}>{deleting ? 'Deleting…' : 'Delete'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
