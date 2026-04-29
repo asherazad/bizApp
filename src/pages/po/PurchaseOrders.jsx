@@ -7,24 +7,23 @@ import { Plus, Pencil } from 'lucide-react';
 
 function POModal({ po, wings, onClose, onSaved }) {
   const toast = useToast();
+  const isEdit = !!po;
+
   const [form, setForm] = useState({
-    wing_id:       po?.wing_id       || '',
-    vendor_id:     po?.vendor_id     || '',
-    po_title:      po?.po_title      || '',
-    po_number:     po?.po_number     || '',
-    currency_code: po?.currency_code || 'PKR',
-    exchange_rate: po?.exchange_rate || '1',
-    order_date:    po?.order_date    || new Date().toISOString().split('T')[0],
-    expected_date: po?.expected_date || '',
-    status:        po?.status        || 'draft',
-    notes:         po?.notes         || '',
+    wing_id:     po?.business_wing_id || '',
+    client_id:   po?.client_id        || '',
+    po_title:    po?.po_title         || '',
+    po_number:   po?.po_number        || '',
+    currency:    po?.currency         || 'PKR',
+    exchange_rate: String(po?.exchange_rate ?? 1),
+    issue_date:  po?.issue_date       || new Date().toISOString().split('T')[0],
+    expiry_date: po?.expiry_date      || '',
+    po_value:    String(po?.po_value  ?? ''),
+    status:      po?.status           || 'draft',
+    notes:       po?.notes            || '',
   });
-  const [items, setItems] = useState(
-    po?.items?.length
-      ? po.items.map((it) => ({ description: it.description, quantity: String(it.quantity), unit_price: String(it.unit_price), amount: String(it.amount) }))
-      : [{ description: '', quantity: '1', unit_price: '', amount: '' }]
-  );
-  const [vendors, setVendors] = useState([]);
+  const [items, setItems] = useState([{ description: '', quantity: '1', unit_price: '', amount: '' }]);
+  const [clients, setClients] = useState([]);
   const [saving, setSaving] = useState(false);
 
   function f(k) { return (e) => setForm((p) => ({ ...p, [k]: e.target.value })); }
@@ -34,9 +33,9 @@ function POModal({ po, wings, onClose, onSaved }) {
       if (idx !== i) return it;
       const next = { ...it, [k]: v };
       if (k === 'unit_price' || k === 'quantity') {
-        next.amount = (parseFloat(k === 'unit_price' ? v : it.unit_price) || 0) *
-                      (parseFloat(k === 'quantity'   ? v : it.quantity)   || 1);
-        next.amount = next.amount.toFixed(2);
+        const price = parseFloat(k === 'unit_price' ? v : it.unit_price) || 0;
+        const qty   = parseFloat(k === 'quantity'   ? v : it.quantity)   || 1;
+        next.amount = (price * qty).toFixed(2);
       }
       return next;
     }));
@@ -44,36 +43,54 @@ function POModal({ po, wings, onClose, onSaved }) {
 
   useEffect(() => {
     if (form.wing_id) {
-      api.get('/clients', { params: { wing_id: form.wing_id, type: 'vendor' } })
-        .then((r) => setVendors(r.data)).catch(() => {});
+      api.get('/clients', { params: { wing_id: form.wing_id } })
+        .then((r) => setClients(r.data)).catch(() => {});
     }
   }, [form.wing_id]);
+
+  // Keep po_value in sync with items total (create mode only)
+  useEffect(() => {
+    if (isEdit) return;
+    const total = items.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0);
+    if (total > 0) setForm((p) => ({ ...p, po_value: total.toFixed(2) }));
+  }, [items, isEdit]);
 
   async function submit(e) {
     e.preventDefault(); setSaving(true);
     try {
-      const mappedItems = items.map((it) => ({
-        description: it.description,
-        quantity:    parseFloat(it.quantity)   || 1,
-        unit_price:  parseFloat(it.unit_price) || 0,
-        amount:      parseFloat(it.amount)     || 0,
-      }));
-      const total_amount = mappedItems.reduce((sum, it) => sum + it.amount, 0);
-      const payload = { ...form, total_amount };
-
-      if (po) {
-        await api.put(`/purchase-orders/${po.id}`, payload);
+      if (isEdit) {
+        await api.put(`/purchase-orders/${po.id}`, {
+          po_title:     form.po_title,
+          po_number:    form.po_number,
+          client_id:    form.client_id  || null,
+          currency:     form.currency,
+          exchange_rate: form.exchange_rate,
+          po_value:     form.po_value,
+          issue_date:   form.issue_date,
+          expiry_date:  form.expiry_date || null,
+          status:       form.status,
+          notes:        form.notes,
+        });
         toast('PO updated', 'success');
       } else {
-        await api.post('/purchase-orders', { ...payload, items: mappedItems });
+        await api.post('/purchase-orders', {
+          wing_id:      form.wing_id,
+          client_id:    form.client_id  || null,
+          po_title:     form.po_title,
+          po_number:    form.po_number,
+          currency:     form.currency,
+          exchange_rate: form.exchange_rate,
+          po_value:     form.po_value,
+          issue_date:   form.issue_date,
+          expiry_date:  form.expiry_date || null,
+          notes:        form.notes,
+        });
         toast('PO created', 'success');
       }
       onSaved();
     } catch (err) { toast(err.response?.data?.error || 'Error', 'error'); }
     finally { setSaving(false); }
   }
-
-  const isEdit = !!po;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -86,15 +103,15 @@ function POModal({ po, wings, onClose, onSaved }) {
           <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div className="grid-2">
               <div className="form-group"><label className="form-label">Wing *</label>
-                <select className="form-control" required value={form.wing_id} onChange={f('wing_id')}>
+                <select className="form-control" required value={form.wing_id} onChange={f('wing_id')} disabled={isEdit}>
                   <option value="">Select…</option>
                   {wings.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                 </select>
               </div>
-              <div className="form-group"><label className="form-label">Vendor</label>
-                <select className="form-control" value={form.vendor_id} onChange={f('vendor_id')}>
+              <div className="form-group"><label className="form-label">Client / Vendor</label>
+                <select className="form-control" value={form.client_id} onChange={f('client_id')}>
                   <option value="">None</option>
-                  {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
             </div>
@@ -106,20 +123,47 @@ function POModal({ po, wings, onClose, onSaved }) {
               <div className="form-group"><label className="form-label">PO # *</label>
                 <input className="form-control" required value={form.po_number} onChange={f('po_number')} />
               </div>
-              <div className="form-group"><label className="form-label">Order Date *</label>
-                <input type="date" className="form-control" required value={form.order_date} onChange={f('order_date')} />
+              <div className="form-group"><label className="form-label">Issue Date *</label>
+                <input type="date" className="form-control" required value={form.issue_date} onChange={f('issue_date')} />
               </div>
             </div>
             <div className="grid-2">
               <div className="form-group"><label className="form-label">Currency</label>
-                <select className="form-control" value={form.currency_code} onChange={f('currency_code')}>
+                <select className="form-control" value={form.currency} onChange={f('currency')}>
                   {['PKR', 'USD', 'EUR', 'AED', 'GBP'].map((c) => <option key={c}>{c}</option>)}
                 </select>
               </div>
-              <div className="form-group"><label className="form-label">Expected Date</label>
-                <input type="date" className="form-control" value={form.expected_date} onChange={f('expected_date')} />
+              <div className="form-group"><label className="form-label">Expiry Date</label>
+                <input type="date" className="form-control" value={form.expiry_date} onChange={f('expiry_date')} />
               </div>
             </div>
+
+            {/* Line items (create) or direct value input (edit) */}
+            {isEdit ? (
+              <div className="form-group"><label className="form-label">PO Value *</label>
+                <input type="number" className="form-control" required value={form.po_value} onChange={f('po_value')} />
+              </div>
+            ) : (
+              <div>
+                <label className="form-label" style={{ display: 'block', marginBottom: 6 }}>Items</label>
+                {items.map((it, i) => (
+                  <div key={i} className="grid-3" style={{ marginBottom: 6 }}>
+                    <input className="form-control" placeholder="Description" value={it.description} onChange={(e) => setItem(i, 'description', e.target.value)} />
+                    <input type="number" className="form-control" placeholder="Qty" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} />
+                    <input type="number" className="form-control" placeholder="Unit Price" value={it.unit_price} onChange={(e) => setItem(i, 'unit_price', e.target.value)} />
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setItems((p) => [...p, { description: '', quantity: '1', unit_price: '', amount: '' }])}>
+                    <Plus size={12} /> Add Line
+                  </button>
+                  <span className="text-muted" style={{ fontSize: 13 }}>
+                    Total: <strong>{formatCurrency(form.po_value, form.currency)}</strong>
+                  </span>
+                </div>
+              </div>
+            )}
+
             {isEdit && (
               <div className="form-group"><label className="form-label">Status</label>
                 <select className="form-control" value={form.status} onChange={f('status')}>
@@ -129,26 +173,15 @@ function POModal({ po, wings, onClose, onSaved }) {
                 </select>
               </div>
             )}
-            <div>
-              <label className="form-label" style={{ display: 'block', marginBottom: 6 }}>Items</label>
-              {items.map((it, i) => (
-                <div key={i} className="grid-3" style={{ marginBottom: 6 }}>
-                  <input className="form-control" placeholder="Description" value={it.description} onChange={(e) => setItem(i, 'description', e.target.value)} />
-                  <input type="number" className="form-control" placeholder="Qty" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} />
-                  <input type="number" className="form-control" placeholder="Unit Price" value={it.unit_price} onChange={(e) => setItem(i, 'unit_price', e.target.value)} />
-                </div>
-              ))}
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setItems((p) => [...p, { description: '', quantity: '1', unit_price: '', amount: '' }])}>
-                <Plus size={12} /> Add Line
-              </button>
-            </div>
             <div className="form-group"><label className="form-label">Notes</label>
               <textarea className="form-control" rows={2} value={form.notes} onChange={f('notes')} />
             </div>
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Create PO'}</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Create PO'}
+            </button>
           </div>
         </form>
       </div>
@@ -159,8 +192,8 @@ function POModal({ po, wings, onClose, onSaved }) {
 export default function PurchaseOrders() {
   const { activeWing, wings } = useAuth();
   const toast = useToast();
-  const [pos, setPOs]       = useState([]);
-  const [modal, setModal]   = useState(null); // null | 'new' | po-object
+  const [pos, setPOs]         = useState([]);
+  const [modal, setModal]     = useState(null); // null | 'new' | po-object
   const [loading, setLoading] = useState(true);
 
   async function load() {
@@ -193,9 +226,9 @@ export default function PurchaseOrders() {
               <tr>
                 <th>PO #</th>
                 <th>Title</th>
-                <th>Vendor</th>
+                <th>Client / Vendor</th>
                 <th>Date</th>
-                <th>Total</th>
+                <th>Value</th>
                 <th>Invoiced</th>
                 <th>Remaining</th>
                 <th>Status</th>
@@ -211,11 +244,13 @@ export default function PurchaseOrders() {
                     <tr key={p.id}>
                       <td style={{ fontWeight: 500 }}>{p.po_number}</td>
                       <td className="text-muted">{p.po_title || '—'}</td>
-                      <td>{p.vendor_name || '—'}</td>
-                      <td className="text-muted">{formatDate(p.order_date)}</td>
-                      <td className="font-mono">{formatCurrency(p.total_amount, p.currency_code)}</td>
-                      <td className="font-mono">{formatCurrency(p.invoiced_amount, p.currency_code)}</td>
-                      <td className="font-mono" style={{ color: 'var(--amber-dark)' }}>{formatCurrency(p.total_amount - p.invoiced_amount, p.currency_code)}</td>
+                      <td>{p.client_name || '—'}</td>
+                      <td className="text-muted">{formatDate(p.issue_date)}</td>
+                      <td className="font-mono">{formatCurrency(p.po_value, p.currency)}</td>
+                      <td className="font-mono">{formatCurrency(p.invoiced_amount || 0, p.currency)}</td>
+                      <td className="font-mono" style={{ color: 'var(--amber-dark)' }}>
+                        {formatCurrency(parseFloat(p.po_value || 0) - parseFloat(p.invoiced_amount || 0), p.currency)}
+                      </td>
                       <td><span className={`badge ${statusBadgeClass(p.status)}`}>{formatStatus(p.status)}</span></td>
                       <td>
                         <button className="btn btn-secondary btn-sm" onClick={() => openEdit(p)} title="Edit">
