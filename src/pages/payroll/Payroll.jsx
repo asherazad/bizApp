@@ -32,13 +32,22 @@ const NUM_INPUT = {
 };
 
 // ─── Monthly Run Tab ──────────────────────────────────────────────────────────
+const STAFF_FILTERS = [
+  { value: 'regular',   label: 'Regular Staff' },
+  { value: '3rd_party', label: '3rd Party'     },
+  { value: 'all',       label: 'All'            },
+];
+
+function is3rdParty(r) { return (r.employment_status || '').toLowerCase() === '3rd party'; }
+
 function RunPayrollTab({ wings, activeWing, toast }) {
-  const [monthYear, setMonthYear] = useState(currentMonthYear());
-  const [wingId,    setWingId]    = useState(activeWing?.id || '');
-  const [rows,      setRows]      = useState([]);
-  const [loading,   setLoading]   = useState(false);
-  const [saving,    setSaving]    = useState(false);
-  const [loaded,    setLoaded]    = useState(false);
+  const [monthYear,    setMonthYear]    = useState(currentMonthYear());
+  const [wingId,       setWingId]       = useState(activeWing?.id || '');
+  const [staffFilter,  setStaffFilter]  = useState('regular');
+  const [rows,         setRows]         = useState([]);
+  const [loading,      setLoading]      = useState(false);
+  const [saving,       setSaving]       = useState(false);
+  const [loaded,       setLoaded]       = useState(false);
 
   async function load() {
     if (!monthYear) return;
@@ -54,21 +63,25 @@ function RunPayrollTab({ wings, activeWing, toast }) {
     } finally { setLoading(false); }
   }
 
-  function updateRow(idx, field, val) {
-    setRows(prev => {
-      const next = [...prev];
-      const row  = { ...next[idx], [field]: val === '' ? 0 : parseFloat(val) || 0 };
+  // Filter rows by selected staff type (client-side — data already loaded)
+  const displayRows = staffFilter === 'all'       ? rows
+                    : staffFilter === '3rd_party'  ? rows.filter(is3rdParty)
+                    : rows.filter(r => !is3rdParty(r));
+
+  function updateRow(resourceId, field, val) {
+    setRows(prev => prev.map(r => {
+      if (r.resource_id !== resourceId) return r;
+      const row = { ...r, [field]: val === '' ? 0 : parseFloat(val) || 0 };
       row.net_salary = Math.max(0,
-        (row.gross_salary      || 0)
-        + (row.overtime_amount || 0)
-        - (row.tax_deduction   || 0)
-        - (row.loan_deduction  || 0)
+        (row.gross_salary        || 0)
+        + (row.overtime_amount   || 0)
+        - (row.tax_deduction     || 0)
+        - (row.loan_deduction    || 0)
         - (row.advance_deduction || 0)
         - (row.other_deductions  || 0)
       );
-      next[idx] = row;
-      return next;
-    });
+      return row;
+    }));
   }
 
   async function processPayroll() {
@@ -77,7 +90,7 @@ function RunPayrollTab({ wings, activeWing, toast }) {
       const { data } = await api.post('/payroll/batch', {
         wing_id: wingId || null,
         month_year: monthYear,
-        rows,
+        rows: displayRows,
       });
       toast(data.message, 'success');
       load();
@@ -86,13 +99,13 @@ function RunPayrollTab({ wings, activeWing, toast }) {
     } finally { setSaving(false); }
   }
 
-  const totalGross = rows.reduce((s, r) => s + (parseFloat(r.gross_salary)     || 0), 0);
-  const totalTax   = rows.reduce((s, r) => s + (parseFloat(r.tax_deduction)    || 0), 0);
-  const totalLoan  = rows.reduce((s, r) => s + (parseFloat(r.loan_deduction)   || 0), 0);
-  const totalAdv   = rows.reduce((s, r) => s + (parseFloat(r.advance_deduction)|| 0), 0);
-  const totalOther = rows.reduce((s, r) => s + (parseFloat(r.other_deductions) || 0), 0);
-  const totalOT    = rows.reduce((s, r) => s + (parseFloat(r.overtime_amount)  || 0), 0);
-  const totalNet   = rows.reduce((s, r) => s + (parseFloat(r.net_salary)       || 0), 0);
+  const totalGross = displayRows.reduce((s, r) => s + (parseFloat(r.gross_salary)     || 0), 0);
+  const totalTax   = displayRows.reduce((s, r) => s + (parseFloat(r.tax_deduction)    || 0), 0);
+  const totalLoan  = displayRows.reduce((s, r) => s + (parseFloat(r.loan_deduction)   || 0), 0);
+  const totalAdv   = displayRows.reduce((s, r) => s + (parseFloat(r.advance_deduction)|| 0), 0);
+  const totalOther = displayRows.reduce((s, r) => s + (parseFloat(r.other_deductions) || 0), 0);
+  const totalOT    = displayRows.reduce((s, r) => s + (parseFloat(r.overtime_amount)  || 0), 0);
+  const totalNet   = displayRows.reduce((s, r) => s + (parseFloat(r.net_salary)       || 0), 0);
 
   return (
     <div>
@@ -112,23 +125,35 @@ function RunPayrollTab({ wings, activeWing, toast }) {
             </select>
           </div>
         )}
+        {/* Staff type filter pills */}
+        <div style={{ display: 'flex', gap: 4, alignSelf: 'flex-end', marginBottom: 1 }}>
+          {STAFF_FILTERS.map(f => (
+            <button key={f.value} onClick={() => setStaffFilter(f.value)} style={{
+              padding: '5px 14px', fontSize: 12, borderRadius: 20, cursor: 'pointer',
+              fontWeight: staffFilter === f.value ? 600 : 400,
+              background: staffFilter === f.value ? 'var(--primary)' : 'var(--surface)',
+              color: staffFilter === f.value ? '#fff' : 'var(--text-muted)',
+              border: `1px solid ${staffFilter === f.value ? 'var(--primary)' : 'var(--border)'}`,
+            }}>{f.label}</button>
+          ))}
+        </div>
         <button className="btn btn-secondary" onClick={load} disabled={loading}>
           {loading ? 'Loading…' : 'Load Preview'}
         </button>
-        {loaded && rows.length > 0 && (
+        {loaded && displayRows.length > 0 && (
           <button className="btn btn-primary" style={{ marginLeft: 'auto' }}
             onClick={processPayroll} disabled={saving}>
-            {saving ? 'Processing…' : `Process Payroll — PKR ${fmt(totalNet)}`}
+            {saving ? 'Processing…' : `Process ${staffFilter === '3rd_party' ? '3rd Party' : staffFilter === 'all' ? 'All' : 'Regular'} — PKR ${fmt(totalNet)}`}
           </button>
         )}
       </div>
 
-      {loaded && rows.length > 0 && (
+      {loaded && displayRows.length > 0 && (
         <div className="stats-grid" style={{ marginBottom: 16 }}>
           <div className="stat-card electric">
             <div className="stat-label">Resources</div>
-            <div className="stat-value">{rows.length}</div>
-            <div className="stat-sub">on payroll</div>
+            <div className="stat-value">{displayRows.length}</div>
+            <div className="stat-sub">{staffFilter === '3rd_party' ? '3rd party' : staffFilter === 'all' ? 'total' : 'regular staff'}</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">Total Gross</div>
@@ -164,11 +189,11 @@ function RunPayrollTab({ wings, activeWing, toast }) {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
+              {displayRows.length === 0 ? (
                 <tr><td colSpan={11} style={{ textAlign: 'center', padding: 32 }} className="text-muted">
-                  No active resources found.
+                  {loaded ? `No ${staffFilter === '3rd_party' ? '3rd party' : 'regular'} resources found.` : 'Click Load Preview.'}
                 </td></tr>
-              ) : rows.map((row, idx) => (
+              ) : displayRows.map((row, idx) => (
                 <tr key={row.resource_id}>
                   <td className="text-muted">{idx + 1}</td>
                   <td>
@@ -176,7 +201,7 @@ function RunPayrollTab({ wings, activeWing, toast }) {
                     {row.designation && <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{row.designation}</div>}
                   </td>
                   <td>
-                    <span className="badge badge-neutral" style={{ fontSize: 10 }}>
+                    <span className={`badge ${is3rdParty(row) ? 'badge-warning' : 'badge-neutral'}`} style={{ fontSize: 10 }}>
                       {row.employment_status || 'employee'}
                     </span>
                   </td>
@@ -184,7 +209,7 @@ function RunPayrollTab({ wings, activeWing, toast }) {
                     <td key={field} style={{ textAlign: 'right' }}>
                       <input type="number" min={0} style={NUM_INPUT}
                         value={row[field] || 0}
-                        onChange={e => updateRow(idx, field, e.target.value)} />
+                        onChange={e => updateRow(row.resource_id, field, e.target.value)} />
                     </td>
                   ))}
                   <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)', whiteSpace: 'nowrap' }}>
@@ -198,10 +223,10 @@ function RunPayrollTab({ wings, activeWing, toast }) {
                 </tr>
               ))}
             </tbody>
-            {rows.length > 0 && (
+            {displayRows.length > 0 && (
               <tfoot>
                 <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 700, fontSize: 12 }}>
-                  <td colSpan={3}>Totals ({rows.length})</td>
+                  <td colSpan={3}>Totals ({displayRows.length})</td>
                   <td style={{ textAlign: 'right' }}>{fmt(totalGross)}</td>
                   <td style={{ textAlign: 'right', color: 'var(--danger)' }}>{fmt(totalTax)}</td>
                   <td style={{ textAlign: 'right', color: 'var(--danger)' }}>{fmt(totalLoan)}</td>
@@ -465,10 +490,11 @@ against staff salaries as per list.</p>
 
 // ─── History Tab ──────────────────────────────────────────────────────────────
 function HistoryTab({ wings, toast }) {
-  const [monthYear, setMonthYear] = useState(currentMonthYear());
-  const [wingId,    setWingId]    = useState('');
-  const [runs,      setRuns]      = useState([]);
-  const [loading,   setLoading]   = useState(false);
+  const [monthYear,   setMonthYear]   = useState(currentMonthYear());
+  const [wingId,      setWingId]      = useState('');
+  const [staffFilter, setStaffFilter] = useState('regular');
+  const [runs,        setRuns]        = useState([]);
+  const [loading,     setLoading]     = useState(false);
 
   async function load() {
     setLoading(true);
@@ -483,9 +509,13 @@ function HistoryTab({ wings, toast }) {
 
   useEffect(() => { if (monthYear) load(); }, [monthYear, wingId]);
 
-  const totalNet   = runs.reduce((s, r) => s + (parseFloat(r.net_salary)  || 0), 0);
-  const totalGross = runs.reduce((s, r) => s + (parseFloat(r.gross_salary || r.basic_earned) || 0), 0);
-  const totalDed   = runs.reduce((s, r) =>
+  const displayRuns = staffFilter === 'all'       ? runs
+                    : staffFilter === '3rd_party'  ? runs.filter(is3rdParty)
+                    : runs.filter(r => !is3rdParty(r));
+
+  const totalNet   = displayRuns.reduce((s, r) => s + (parseFloat(r.net_salary)  || 0), 0);
+  const totalGross = displayRuns.reduce((s, r) => s + (parseFloat(r.gross_salary || r.basic_earned) || 0), 0);
+  const totalDed   = displayRuns.reduce((s, r) =>
     s + (parseFloat(r.tax_deduction)||0) + (parseFloat(r.loan_deduction)||0)
       + (parseFloat(r.advance_deduction)||0) + (parseFloat(r.other_deductions)||0), 0);
 
@@ -505,13 +535,24 @@ function HistoryTab({ wings, toast }) {
             </select>
           </div>
         )}
+        <div style={{ display: 'flex', gap: 4, alignSelf: 'flex-end', marginBottom: 1 }}>
+          {STAFF_FILTERS.map(f => (
+            <button key={f.value} onClick={() => setStaffFilter(f.value)} style={{
+              padding: '5px 14px', fontSize: 12, borderRadius: 20, cursor: 'pointer',
+              fontWeight: staffFilter === f.value ? 600 : 400,
+              background: staffFilter === f.value ? 'var(--primary)' : 'var(--surface)',
+              color: staffFilter === f.value ? '#fff' : 'var(--text-muted)',
+              border: `1px solid ${staffFilter === f.value ? 'var(--primary)' : 'var(--border)'}`,
+            }}>{f.label}</button>
+          ))}
+        </div>
       </div>
 
-      {runs.length > 0 && (
+      {displayRuns.length > 0 && (
         <div className="stats-grid" style={{ marginBottom: 16 }}>
           <div className="stat-card electric">
             <div className="stat-label">Payroll Records</div>
-            <div className="stat-value">{runs.length}</div>
+            <div className="stat-value">{displayRuns.length}</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">Total Gross</div>
@@ -530,8 +571,8 @@ function HistoryTab({ wings, toast }) {
 
       <div className="card" style={{ padding: 0 }}>
         <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontWeight: 600, fontSize: 13 }}>{monthLabel(monthYear)} — {runs.length} records</span>
-          {runs.length > 0 && <span style={{ fontWeight: 700, color: 'var(--success)' }}>Net: PKR {fmt(totalNet)}</span>}
+          <span style={{ fontWeight: 600, fontSize: 13 }}>{monthLabel(monthYear)} — {displayRuns.length} records</span>
+          {displayRuns.length > 0 && <span style={{ fontWeight: 700, color: 'var(--success)' }}>Net: PKR {fmt(totalNet)}</span>}
         </div>
         <div className="table-wrap">
           <table className="table" style={{ fontSize: 12 }}>
@@ -553,12 +594,12 @@ function HistoryTab({ wings, toast }) {
             <tbody>
               {loading ? (
                 <tr><td colSpan={11} style={{ textAlign: 'center', padding: 32 }} className="text-muted">Loading…</td></tr>
-              ) : runs.length === 0 ? (
+              ) : displayRuns.length === 0 ? (
                 <tr><td colSpan={11} style={{ textAlign: 'center', padding: 48 }} className="text-muted">
-                  No payroll records for {monthLabel(monthYear)}.
+                  No {staffFilter === '3rd_party' ? '3rd party' : staffFilter === 'all' ? '' : 'regular'} payroll records for {monthLabel(monthYear)}.
                   Use the <strong>Monthly Run</strong> tab to generate.
                 </td></tr>
-              ) : runs.map((r, i) => (
+              ) : displayRuns.map((r, i) => (
                 <tr key={r.id}>
                   <td className="text-muted">{i + 1}</td>
                   <td style={{ fontWeight: 500 }}>{r.resource_name}</td>
@@ -578,25 +619,25 @@ function HistoryTab({ wings, toast }) {
                 </tr>
               ))}
             </tbody>
-            {runs.length > 0 && (
+            {displayRuns.length > 0 && (
               <tfoot>
                 <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 700 }}>
-                  <td colSpan={3}>Totals</td>
+                  <td colSpan={3}>Totals ({displayRuns.length})</td>
                   <td className="font-mono" style={{ textAlign: 'right' }}>{fmt(totalGross)}</td>
                   <td className="font-mono" style={{ textAlign: 'right', color: 'var(--danger)' }}>
-                    {fmt(runs.reduce((s,r) => s+(parseFloat(r.tax_deduction)||0),0))}
+                    {fmt(displayRuns.reduce((s,r) => s+(parseFloat(r.tax_deduction)||0),0))}
                   </td>
                   <td className="font-mono" style={{ textAlign: 'right', color: 'var(--danger)' }}>
-                    {fmt(runs.reduce((s,r) => s+(parseFloat(r.loan_deduction)||0),0))}
+                    {fmt(displayRuns.reduce((s,r) => s+(parseFloat(r.loan_deduction)||0),0))}
                   </td>
                   <td className="font-mono" style={{ textAlign: 'right', color: 'var(--danger)' }}>
-                    {fmt(runs.reduce((s,r) => s+(parseFloat(r.advance_deduction)||0),0))}
+                    {fmt(displayRuns.reduce((s,r) => s+(parseFloat(r.advance_deduction)||0),0))}
                   </td>
                   <td className="font-mono" style={{ textAlign: 'right', color: 'var(--danger)' }}>
-                    {fmt(runs.reduce((s,r) => s+(parseFloat(r.other_deductions)||0),0))}
+                    {fmt(displayRuns.reduce((s,r) => s+(parseFloat(r.other_deductions)||0),0))}
                   </td>
                   <td className="font-mono" style={{ textAlign: 'right', color: 'var(--primary)' }}>
-                    {fmt(runs.reduce((s,r) => s+(parseFloat(r.overtime_amount)||0),0))}
+                    {fmt(displayRuns.reduce((s,r) => s+(parseFloat(r.overtime_amount)||0),0))}
                   </td>
                   <td className="font-mono" style={{ textAlign: 'right', color: 'var(--success)' }}>{fmt(totalNet)}</td>
                   <td />

@@ -140,7 +140,7 @@ router.get('/', async (req, res) => {
     let q = db('payroll_runs as p')
       .join('resources as r', 'r.id', 'p.resource_id')
       .leftJoin('business_wings as bw', 'bw.id', 'p.business_wing_id')
-      .select('p.*', 'r.full_name as resource_name', 'bw.name as wing_name')
+      .select('p.*', 'r.full_name as resource_name', 'r.employment_status', 'bw.name as wing_name')
       .orderBy('p.created_at', 'desc');
     if (wing_id)    q = q.where('p.business_wing_id', wing_id);
     if (resource_id) q = q.where('p.resource_id', resource_id);
