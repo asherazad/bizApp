@@ -56,8 +56,31 @@ function parseBiometricDateTime(val) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function timeToMins(t) {
+  const [h, m] = String(t).split(':').map(Number);
+  return h * 60 + m;
+}
+
+function isWeekday(dateStr) {
+  const day = new Date(dateStr + 'T00:00:00').getDay(); // local midnight avoids UTC shift
+  return day !== 0 && day !== 6; // 0=Sun, 6=Sat
+}
+
+// Enumerate all weekday dates between two ISO date strings (inclusive)
+function weekdaysBetween(from, to) {
+  const days = [];
+  const cur  = new Date(from + 'T00:00:00');
+  const end  = new Date(to   + 'T00:00:00');
+  while (cur <= end) {
+    const d = cur.getDay();
+    if (d !== 0 && d !== 6) days.push(cur.toISOString().split('T')[0]);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return days;
+}
+
 // ─── POST /import — biometric Excel ──────────────────────────────────────────
-// Must be defined before /:id routes to avoid route collision.
 router.post('/import', upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
@@ -66,98 +89,129 @@ router.post('/import', upload.single('file'), async (req, res) => {
     const wb   = XLSX.read(file.buffer, { type: 'buffer', cellDates: true });
     const ws   = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-
     if (!rows.length) return res.status(400).json({ error: 'Sheet is empty or has no data rows' });
 
-    // Build lookup: resource_seq_id (integer) → resource row
-    const resources = await db('resources')
+    // ── 1. Build resource lookup (one query) ──────────────────────────────────
+    const allResources = await db('resources')
       .whereNotNull('resource_seq_id')
-      .select('id', 'resource_seq_id', 'full_name', 'business_wing_id');
+      .select('id', 'resource_seq_id', 'full_name');
     const resourceMap = {};
-    for (const r of resources) resourceMap[parseInt(r.resource_seq_id)] = r;
+    for (const r of allResources) resourceMap[parseInt(r.resource_seq_id)] = r;
 
-    // Collect valid punches from the sheet
-    const punches = [];
+    // ── 2. Parse and group punches ────────────────────────────────────────────
+    const grouped = {}; // key: "seqId_date"
+    const unknownIds = new Set();
+
     for (const row of rows) {
-      // Support "No.", "No", "ID" column names
-      const rawId  = row['No.'] ?? row['No'] ?? row['ID'] ?? '';
-      const rawDt  = row['Date/Time'] ?? row['DateTime'] ?? row['Time'] ?? row['date_time'] ?? '';
-      const seqId  = parseInt(rawId);
+      const rawId = row['No.'] ?? row['No'] ?? row['ID'] ?? '';
+      const rawDt = row['Date/Time'] ?? row['DateTime'] ?? row['Time'] ?? row['date_time'] ?? '';
+      const seqId = parseInt(rawId);
       if (!seqId || !rawDt) continue;
 
       const dt = parseBiometricDateTime(rawDt);
       if (!dt) continue;
 
-      const date    = dt.toISOString().split('T')[0];           // YYYY-MM-DD
-      const timePad = (n) => String(n).padStart(2, '0');
-      const time    = `${timePad(dt.getHours())}:${timePad(dt.getMinutes())}`; // HH:MM
-      punches.push({ seqId, date, time });
+      const date = dt.toISOString().split('T')[0];
+      const pad  = n => String(n).padStart(2, '0');
+      const time = `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+
+      if (!resourceMap[seqId]) { unknownIds.add(seqId); continue; }
+
+      const key = `${seqId}_${date}`;
+      if (!grouped[key]) grouped[key] = { seqId, date, times: [] };
+      grouped[key].times.push(time);
     }
 
-    if (!punches.length) {
+    const entries = Object.values(grouped);
+    if (!entries.length) {
       return res.status(400).json({
-        error: 'No valid punch records found. Verify the sheet has "No." and "Date/Time" columns.',
+        error: `No valid punch records found. Verify "No." and "Date/Time" columns exist.${unknownIds.size ? ` Unknown IDs: ${[...unknownIds].slice(0,5).join(', ')}` : ''}`,
       });
     }
 
-    // Group punches by (seqId, date) — collect all times per person per day
-    const grouped = {};
-    for (const p of punches) {
-      const key = `${p.seqId}_${p.date}`;
-      if (!grouped[key]) grouped[key] = { seqId: p.seqId, date: p.date, times: [] };
-      grouped[key].times.push(p.time);
-    }
-
-    let inserted = 0, updated = 0, skipped = 0;
-    const errors = [];
-
-    for (const entry of Object.values(grouped)) {
+    // ── 3. Determine check_in / check_out / status per day ───────────────────
+    const processed = []; // { resource_id, date, check_in, check_out, status }
+    for (const entry of entries) {
       const resource = resourceMap[entry.seqId];
-      if (!resource) {
-        skipped++;
-        if (errors.length < 5) errors.push(`No resource found for ID ${entry.seqId}`);
-        continue;
-      }
-
-      // Sort times ascending; first = check-in, last = check-out
       entry.times.sort();
       const check_in  = entry.times[0];
       const check_out = entry.times.length > 1 ? entry.times[entry.times.length - 1] : null;
 
-      try {
-        const existing = await db('attendance_records')
-          .where({ resource_id: resource.id, record_date: entry.date })
-          .first();
-
-        if (existing) {
-          await db('attendance_records')
-            .where({ id: existing.id })
-            .update({ check_in, check_out, status: 'present' });
-          updated++;
-        } else {
-          await db('attendance_records').insert({
-            resource_id: resource.id,
-            record_date: entry.date,
-            status:      'present',
-            check_in,
-            check_out,
-          });
-          inserted++;
-        }
-      } catch (e) {
-        skipped++;
-        if (errors.length < 5) errors.push(`${resource.full_name} ${entry.date}: ${e.message}`);
+      // Status: present = ≥8 h worked; half_day = <8 h or single punch
+      let status = 'half_day';
+      if (check_out) {
+        const worked = timeToMins(check_out) - timeToMins(check_in);
+        if (worked >= 8 * 60) status = 'present';
       }
+
+      processed.push({ resource_id: resource.id, record_date: entry.date, check_in, check_out, status });
     }
 
-    const firstError = errors[0] || null;
+    // ── 4. Fetch all existing records in ONE query ────────────────────────────
+    const resourceIds  = [...new Set(processed.map(p => p.resource_id))];
+    const dates        = [...new Set(processed.map(p => p.record_date))];
+    const existingRows = await db('attendance_records')
+      .whereIn('resource_id', resourceIds)
+      .whereIn('record_date', dates)
+      .select('id', 'resource_id', 'record_date');
+
+    const existingMap = {};
+    for (const r of existingRows) existingMap[`${r.resource_id}_${r.record_date}`] = r.id;
+
+    // ── 5. Split into inserts and updates ─────────────────────────────────────
+    const toInsert = [];
+    const toUpdate = [];
+    for (const p of processed) {
+      const key = `${p.resource_id}_${p.record_date}`;
+      if (existingMap[key]) toUpdate.push({ id: existingMap[key], ...p });
+      else                  toInsert.push(p);
+    }
+
+    // ── 6. Bulk insert + parallel updates ─────────────────────────────────────
+    if (toInsert.length) await db('attendance_records').insert(toInsert);
+    if (toUpdate.length) {
+      await Promise.all(toUpdate.map(r =>
+        db('attendance_records').where({ id: r.id })
+          .update({ check_in: r.check_in, check_out: r.check_out, status: r.status })
+      ));
+    }
+
+    // ── 7. Auto-mark leave for weekdays with no punch ─────────────────────────
+    // For each resource that appeared in the import, any weekday in the import
+    // date range with no punch record gets a 'leave' record.
+    const minDate = dates.reduce((a, b) => a < b ? a : b);
+    const maxDate = dates.reduce((a, b) => a > b ? a : b);
+    const allWeekdays = weekdaysBetween(minDate, maxDate);
+
+    // Build set of (resource_id, date) already handled
+    const handledKeys = new Set([...processed.map(p => `${p.resource_id}_${p.record_date}`)]);
+
+    // Fetch any leave records that already exist to avoid duplicates
+    const existingLeave = await db('attendance_records')
+      .whereIn('resource_id', resourceIds)
+      .whereIn('record_date', allWeekdays)
+      .select('resource_id', 'record_date');
+    for (const r of existingLeave) handledKeys.add(`${r.resource_id}_${r.record_date}`);
+
+    const leaveRows = [];
+    for (const rid of resourceIds) {
+      for (const d of allWeekdays) {
+        if (!handledKeys.has(`${rid}_${d}`)) {
+          leaveRows.push({ resource_id: rid, record_date: d, status: 'leave' });
+        }
+      }
+    }
+    if (leaveRows.length) await db('attendance_records').insert(leaveRows);
+
     res.json({
-      message: `Import complete — ${inserted} added, ${updated} updated${skipped ? `, ${skipped} skipped` : ''}${firstError ? ' | ' + firstError : ''}`,
-      inserted, updated, skipped,
+      message: `Import complete — ${toInsert.length} added, ${toUpdate.length} updated, ${leaveRows.length} leave days generated${unknownIds.size ? `, ${unknownIds.size} unknown IDs skipped` : ''}`,
+      inserted: toInsert.length,
+      updated:  toUpdate.length,
+      leave:    leaveRows.length,
     });
   } catch (err) {
     console.error('POST /attendance/import', err);
-    res.status(500).json({ error: 'Server error', detail: err.message });
+    res.status(500).json({ error: 'Server error', detail: String(err.message) });
   }
 });
 

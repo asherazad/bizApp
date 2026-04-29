@@ -14,18 +14,18 @@ const STATUS_BADGE = {
   present:        'badge-success',
   absent:         'badge-danger',
   leave:          'badge-warning',
-  half_day:       'badge-info',
+  half_day:       'badge-danger',
   holiday:        'badge-neutral',
   work_from_home: 'badge-info',
 };
 
 function calcHours(checkIn, checkOut) {
-  if (!checkIn || !checkOut) return '—';
+  if (!checkIn || !checkOut) return null;
   const toMins = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
   const diff = toMins(checkOut) - toMins(checkIn);
-  if (diff <= 0) return '—';
+  if (diff <= 0) return null;
   const h = Math.floor(diff / 60), m = diff % 60;
-  return m ? `${h}h ${m}m` : `${h}h`;
+  return { label: m ? `${h}h ${m}m` : `${h}h`, short: diff < 8 * 60 };
 }
 
 export default function Attendance() {
@@ -87,9 +87,9 @@ export default function Attendance() {
     ? records.filter(r => r.resource_name?.toLowerCase().includes(filters.search.toLowerCase()))
     : records;
 
-  const presentCount = displayed.filter(r => r.status === 'present').length;
-  const absentCount  = displayed.filter(r => r.status === 'absent').length;
-  const leaveCount   = displayed.filter(r => r.status === 'leave' || r.status === 'half_day').length;
+  const presentCount  = displayed.filter(r => r.status === 'present').length;
+  const halfDayCount  = displayed.filter(r => r.status === 'half_day').length;
+  const leaveCount    = displayed.filter(r => r.status === 'leave').length;
 
   return (
     <div>
@@ -155,17 +155,17 @@ export default function Attendance() {
         <div className="stat-card success">
           <div className="stat-label">Present</div>
           <div className="stat-value">{presentCount}</div>
-          <div className="stat-sub">days logged</div>
+          <div className="stat-sub">≥ 8 hrs worked</div>
         </div>
         <div className="stat-card electric">
-          <div className="stat-label">Absent</div>
-          <div className="stat-value">{absentCount}</div>
-          <div className="stat-sub">days missed</div>
+          <div className="stat-label">Short Hours</div>
+          <div className="stat-value">{halfDayCount}</div>
+          <div className="stat-sub">under 8 hrs</div>
         </div>
         <div className="stat-card warning">
-          <div className="stat-label">Leave / Half Day</div>
+          <div className="stat-label">Leave</div>
           <div className="stat-value">{leaveCount}</div>
-          <div className="stat-sub">days on leave</div>
+          <div className="stat-sub">no punch</div>
         </div>
         <div className="stat-card lime">
           <div className="stat-label">Total Records</div>
@@ -213,24 +213,29 @@ export default function Attendance() {
                     </span>
                   </td>
                 </tr>
-              ) : displayed.map(r => (
-                <tr key={r.id}>
-                  <td style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{r.resource_name}</td>
-                  <td className="text-muted" style={{ whiteSpace: 'nowrap' }}>{formatDate(r.record_date)}</td>
-                  <td className="font-mono">{r.check_in  || '—'}</td>
-                  <td className="font-mono">{r.check_out || '—'}</td>
-                  <td className="font-mono">{calcHours(r.check_in, r.check_out)}</td>
-                  <td>
-                    <span
-                      className={`badge ${STATUS_BADGE[r.status] || 'badge-neutral'}`}
-                      style={{ fontSize: 10, textTransform: 'capitalize' }}
-                    >
-                      {(r.status || '').replace(/_/g, ' ')}
-                    </span>
-                  </td>
-                  <td className="text-muted">{r.notes || '—'}</td>
-                </tr>
-              ))}
+              ) : displayed.map(r => {
+                const hrs = calcHours(r.check_in, r.check_out);
+                return (
+                  <tr key={r.id} style={r.status === 'half_day' ? { background: 'rgba(255,180,0,0.06)' } : undefined}>
+                    <td style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{r.resource_name}</td>
+                    <td className="text-muted" style={{ whiteSpace: 'nowrap' }}>{formatDate(r.record_date)}</td>
+                    <td className="font-mono">{r.check_in  || '—'}</td>
+                    <td className="font-mono">{r.check_out || '—'}</td>
+                    <td className="font-mono" style={hrs?.short ? { color: 'var(--warning)', fontWeight: 600 } : undefined}>
+                      {hrs ? hrs.label : '—'}
+                    </td>
+                    <td>
+                      <span
+                        className={`badge ${STATUS_BADGE[r.status] || 'badge-neutral'}`}
+                        style={{ fontSize: 10, textTransform: 'capitalize' }}
+                      >
+                        {(r.status || '').replace(/_/g, ' ')}
+                      </span>
+                    </td>
+                    <td className="text-muted">{r.notes || '—'}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
