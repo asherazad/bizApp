@@ -148,6 +148,7 @@ function RunPayrollTab({ wings, activeWing, toast }) {
   const [loading,      setLoading]      = useState(false);
   const [loaded,       setLoaded]       = useState(false);
   const [showConfirm,  setShowConfirm]  = useState(false);
+  const [singleRow,    setSingleRow]    = useState(null);
 
   async function load() {
     if (!monthYear) return;
@@ -271,6 +272,7 @@ function RunPayrollTab({ wings, activeWing, toast }) {
                 <th style={{ textAlign: 'right' }}>Overtime</th>
                 <th style={{ textAlign: 'right' }}>Net Salary</th>
                 <th style={{ width: 60 }}>Status</th>
+                <th style={{ width: 72 }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -305,6 +307,16 @@ function RunPayrollTab({ wings, activeWing, toast }) {
                       ? <span className="badge badge-success" style={{ fontSize: 10 }}>Paid</span>
                       : <span className="badge badge-neutral" style={{ fontSize: 10 }}>Draft</span>}
                   </td>
+                  <td>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      style={{ fontSize: 11, padding: '3px 8px' }}
+                      onClick={() => setSingleRow(row)}
+                      title={row.status === 'paid' ? 'Re-process salary' : 'Process salary'}
+                    >
+                      {row.status === 'paid' ? 'Re-pay' : 'Pay'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -319,7 +331,7 @@ function RunPayrollTab({ wings, activeWing, toast }) {
                   <td style={{ textAlign: 'right', color: 'var(--danger)' }}>{fmt(totalOther)}</td>
                   <td style={{ textAlign: 'right', color: 'var(--primary)' }}>{fmt(totalOT)}</td>
                   <td style={{ textAlign: 'right', color: 'var(--success)' }}>{fmt(totalNet)}</td>
-                  <td />
+                  <td colSpan={2} />
                 </tr>
               </tfoot>
             )}
@@ -343,6 +355,16 @@ function RunPayrollTab({ wings, activeWing, toast }) {
           wingId={wingId}
           onClose={() => setShowConfirm(false)}
           onDone={() => { setShowConfirm(false); load(); }}
+          toast={toast}
+        />
+      )}
+      {singleRow && (
+        <ProcessModal
+          rows={[singleRow]}
+          monthYear={monthYear}
+          wingId={wingId}
+          onClose={() => setSingleRow(null)}
+          onDone={() => { setSingleRow(null); load(); }}
           toast={toast}
         />
       )}
