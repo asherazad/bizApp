@@ -1,9 +1,10 @@
 const CURRENCY_SYMBOLS = { PKR: '₨', USD: '$', EUR: '€', AED: 'د.إ', GBP: '£' };
 
-export function formatCurrency(amount, currency = 'PKR') {
-  const symbol = CURRENCY_SYMBOLS[currency] || currency;
+export function formatCurrency(amount, currency) {
+  if (amount == null) return '';
+  const sym = CURRENCY_SYMBOLS[currency] || (typeof currency === 'string' ? currency : 'PKR');
   const n = parseFloat(amount) || 0;
-  return `${symbol} ${n.toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  return `${sym} ${n.toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
 export function formatDate(dateStr) {
