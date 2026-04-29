@@ -236,6 +236,8 @@ export default function Banks() {
   const [deleting, setDeleting]     = useState(false);
   const [txnModal, setTxnModal]     = useState(false);
   const [transferModal, setTransferModal] = useState(false);
+  const [reverseTxn, setReverseTxn] = useState(null);
+  const [reversing, setReversing]   = useState(false);
   const [loading, setLoading]       = useState(true);
 
   async function loadAccounts() {
@@ -263,6 +265,19 @@ export default function Banks() {
     } catch (err) {
       toast(err.response?.data?.error || 'Error deleting account', 'error');
     } finally { setDeleting(false); }
+  }
+
+  async function reverseTransaction(id) {
+    setReversing(true);
+    try {
+      await api.delete(`/banks/transactions/${id}`);
+      toast('Transaction reversed and balance restored', 'success');
+      setReverseTxn(null);
+      loadTxns(selected?.id);
+      loadAccounts();
+    } catch (err) {
+      toast(err.response?.data?.error || 'Error reversing transaction', 'error');
+    } finally { setReversing(false); }
   }
 
   useEffect(() => { loadAccounts(); }, [activeWing]);
@@ -315,11 +330,11 @@ export default function Banks() {
           <div className="table-wrap">
             <table className="table">
               <thead>
-                <tr><th>Date</th><th>Description</th><th>Category</th><th>Type</th><th className="text-right">Amount</th><th className="text-right">Balance</th></tr>
+                <tr><th>Date</th><th>Description</th><th>Category</th><th>Type</th><th className="text-right">Amount</th><th className="text-right">Balance</th><th style={{ width: 80 }}></th></tr>
               </thead>
               <tbody>
                 {transactions.length === 0
-                  ? <tr><td colSpan={6} className="text-muted" style={{ textAlign: 'center', padding: 24 }}>No transactions</td></tr>
+                  ? <tr><td colSpan={7} className="text-muted" style={{ textAlign: 'center', padding: 24 }}>No transactions</td></tr>
                   : transactions.map((t) => (
                     <tr key={t.id}>
                       <td className="text-muted">{formatDate(t.txn_date)}</td>
@@ -332,6 +347,16 @@ export default function Banks() {
                       </td>
                       <td className="text-right font-mono">{formatCurrency(t.amount, t.currency)}</td>
                       <td className="text-right font-mono text-muted">{t.running_balance != null ? formatCurrency(t.running_balance, selected.currency_code || selected.currency) : '—'}</td>
+                      <td>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          style={{ fontSize: 11, padding: '3px 8px', color: 'var(--danger, #dc3545)' }}
+                          onClick={() => setReverseTxn(t)}
+                          title="Reverse this transaction"
+                        >
+                          Reverse
+                        </button>
+                      </td>
                     </tr>
                   ))}
               </tbody>
@@ -344,6 +369,41 @@ export default function Banks() {
       {editTarget && <EditAccountModal account={editTarget} wings={wings} onClose={() => setEditTarget(null)} onSaved={() => { setEditTarget(null); loadAccounts(); }} />}
       {txnModal && <TxnModal account={selected} onClose={() => setTxnModal(false)} onSaved={() => { setTxnModal(false); loadTxns(selected?.id); loadAccounts(); }} />}
       {transferModal && selected && <TransferModal fromAccount={selected} onClose={() => setTransferModal(false)} onSaved={() => { setTransferModal(false); loadTxns(selected?.id); loadAccounts(); }} />}
+
+      {reverseTxn && (
+        <div className="modal-overlay" onClick={() => setReverseTxn(null)}>
+          <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h3>Reverse Transaction</h3><button className="btn btn-secondary btn-sm" onClick={() => setReverseTxn(null)}>✕</button></div>
+            <div className="modal-body">
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px', marginBottom: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span className="text-muted" style={{ fontSize: 12 }}>Date</span>
+                  <span style={{ fontSize: 12 }}>{formatDate(reverseTxn.txn_date)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span className="text-muted" style={{ fontSize: 12 }}>Description</span>
+                  <span style={{ fontSize: 12, maxWidth: 220, textAlign: 'right' }}>{reverseTxn.description}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 4 }}>
+                  <span style={{ fontWeight: 600 }}>Amount</span>
+                  <span style={{ fontWeight: 700, color: reverseTxn.txn_type === 'Credit' ? 'var(--success)' : 'var(--danger)' }}>
+                    {reverseTxn.txn_type === 'Credit' ? '+' : '-'}{formatCurrency(reverseTxn.amount, reverseTxn.currency)}
+                  </span>
+                </div>
+              </div>
+              <p className="text-muted" style={{ fontSize: 13 }}>
+                This will delete the transaction and restore the account balance. This cannot be undone.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setReverseTxn(null)} disabled={reversing}>Cancel</button>
+              <button className="btn btn-danger" disabled={reversing} onClick={() => reverseTransaction(reverseTxn.id)}>
+                {reversing ? 'Reversing…' : 'Confirm Reversal'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {deleteTarget && (
         <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
