@@ -161,7 +161,6 @@ router.post('/batch', async (req, res) => {
           currency:         bankAccount.currency || 'PKR',
           description:      `Salary - ${monthLabel} (${rows.length} resources)\n\n${breakdown}`,
           reference_type:   'payroll',
-          reference_id:     month_year,
           txn_date:         txnDate,
           running_balance:  newBalance,
         });
