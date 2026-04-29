@@ -91,15 +91,24 @@ router.get('/preview', async (req, res) => {
 // ─── POST /batch  — upsert payroll for all resources in a month ───────────────
 router.post('/batch', async (req, res) => {
   try {
-    const { wing_id, month_year, rows } = req.body;
+    const { wing_id, month_year, rows, bank_account_id, payment_date } = req.body;
     if (!month_year || !Array.isArray(rows) || !rows.length) {
       return res.status(400).json({ error: 'month_year and rows[] required' });
     }
 
     // Pre-fetch resource wing IDs so we can fall back when no global wing filter
-    const resourceIds  = rows.map(r => r.resource_id);
-    const resourceRows = await db('resources').whereIn('id', resourceIds).select('id', 'business_wing_id');
+    const resourceIds    = rows.map(r => r.resource_id);
+    const resourceRows   = await db('resources').whereIn('id', resourceIds).select('id', 'business_wing_id');
     const wingByResource = Object.fromEntries(resourceRows.map(r => [r.id, r.business_wing_id]));
+
+    // Validate bank account up front (before opening the transaction)
+    let bankAccount = null;
+    if (bank_account_id) {
+      bankAccount = await db('bank_accounts').where({ id: bank_account_id }).first();
+      if (!bankAccount) return res.status(404).json({ error: 'Bank account not found' });
+    }
+
+    const txnDate = payment_date || new Date().toISOString().split('T')[0];
 
     await db.transaction(async trx => {
       for (const row of rows) {
@@ -123,6 +132,7 @@ router.post('/batch', async (req, res) => {
           other_deductions:  parseFloat(row.other_deductions)  || 0,
           net_salary:        net,
           status:            'paid',
+          payment_date:      txnDate,
         };
         if (row.payroll_run_id) {
           await trx('payroll_runs').where({ id: row.payroll_run_id }).update(payload);
@@ -130,9 +140,36 @@ router.post('/batch', async (req, res) => {
           await trx('payroll_runs').insert(payload);
         }
       }
+
+      // Create a single bank debit transaction covering all resources
+      if (bankAccount) {
+        const totalNet    = rows.reduce((s, r) => s + (parseFloat(r.net_salary) || 0), 0);
+        const newBalance  = parseFloat(bankAccount.current_balance) - totalNet;
+        const [y, m]      = month_year.split('-');
+        const monthLabel  = new Date(parseInt(y), parseInt(m) - 1, 1)
+          .toLocaleString('en-US', { month: 'long', year: 'numeric' });
+        const breakdown   = rows
+          .map((r, i) => `${i + 1}. ${r.resource_name}: PKR ${(parseFloat(r.net_salary) || 0).toLocaleString('en-PK')}`)
+          .join('\n');
+        const txnWingId   = wing_id || wingByResource[rows[0]?.resource_id] || null;
+
+        await trx('bank_transactions').insert({
+          bank_account_id,
+          business_wing_id: txnWingId,
+          txn_type:         'Debit',
+          amount:           totalNet,
+          currency:         bankAccount.currency || 'PKR',
+          description:      `Salary - ${monthLabel} (${rows.length} resources)\n\n${breakdown}`,
+          reference_type:   'payroll',
+          reference_id:     month_year,
+          txn_date:         txnDate,
+          running_balance:  newBalance,
+        });
+        await trx('bank_accounts').where({ id: bank_account_id }).update({ current_balance: newBalance });
+      }
     });
 
-    res.json({ message: 'Payroll processed', count: rows.length });
+    res.json({ message: `Payroll processed — ${rows.length} records, bank debited`, count: rows.length });
   } catch (err) {
     res.status(500).json({ error: 'Server error', detail: err.message });
   }

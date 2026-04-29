@@ -40,14 +40,114 @@ const STAFF_FILTERS = [
 
 function is3rdParty(r) { return (r.employment_status || '').toLowerCase() === '3rd party'; }
 
+// ─── Process Payroll Confirmation Modal ──────────────────────────────────────
+function ProcessModal({ rows, monthYear, wingId, onClose, onDone, toast }) {
+  const [accounts,      setAccounts]      = useState([]);
+  const [bankAccountId, setBankAccountId] = useState('');
+  const [paymentDate,   setPaymentDate]   = useState(new Date().toISOString().split('T')[0]);
+  const [saving,        setSaving]        = useState(false);
+
+  const totalNet = rows.reduce((s, r) => s + (parseFloat(r.net_salary) || 0), 0);
+
+  useEffect(() => {
+    api.get('/banks/accounts', { params: wingId ? { wing_id: wingId } : {} })
+      .then(r => setAccounts(r.data))
+      .catch(() => {});
+  }, [wingId]);
+
+  async function confirm() {
+    if (!bankAccountId) { toast('Select a bank account to debit', 'error'); return; }
+    setSaving(true);
+    try {
+      const { data } = await api.post('/payroll/batch', {
+        wing_id: wingId || null,
+        month_year: monthYear,
+        bank_account_id: bankAccountId,
+        payment_date: paymentDate,
+        rows,
+      });
+      toast(data.message, 'success');
+      onDone();
+    } catch (err) {
+      toast(err.response?.data?.detail || err.response?.data?.error || 'Failed to process payroll', 'error');
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 460, width: '95vw' }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3 style={{ margin: 0 }}>Confirm Payroll Processing</h3>
+          <button className="btn btn-secondary btn-sm btn-icon" onClick={onClose}>✕</button>
+        </div>
+        <div style={{ padding: '16px 20px' }}>
+          {/* Summary */}
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span className="text-muted" style={{ fontSize: 12 }}>Resources</span>
+              <span style={{ fontWeight: 600 }}>{rows.length}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+              <span style={{ fontWeight: 600 }}>Total Net Payable</span>
+              <span style={{ fontWeight: 700, fontSize: 16, color: 'var(--success)' }}>PKR {fmt(totalNet)}</span>
+            </div>
+          </div>
+
+          {/* Resource breakdown */}
+          <div style={{ maxHeight: 180, overflowY: 'auto', marginBottom: 16, border: '1px solid var(--border)', borderRadius: 6 }}>
+            <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.resource_id} style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <td style={{ padding: '6px 10px', color: 'var(--text-muted)' }}>{i + 1}.</td>
+                    <td style={{ padding: '6px 4px', fontWeight: 500 }}>{r.resource_name}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)', fontWeight: 600 }}>
+                      PKR {fmt(r.net_salary)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Bank account */}
+          <div className="form-group">
+            <label className="form-label">Debit from Bank Account *</label>
+            <select className="form-control" required value={bankAccountId} onChange={e => setBankAccountId(e.target.value)}>
+              <option value="">Select account…</option>
+              {accounts.map(a => (
+                <option key={a.id} value={a.id}>
+                  {a.bank_name} — {a.account_title} (PKR {fmt(a.current_balance)})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Payment Date</label>
+            <input type="date" className="form-control" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+            <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+            <button className="btn btn-primary" onClick={confirm} disabled={saving || !bankAccountId}>
+              {saving ? 'Processing…' : `Process & Debit PKR ${fmt(totalNet)}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RunPayrollTab({ wings, activeWing, toast }) {
   const [monthYear,    setMonthYear]    = useState(currentMonthYear());
   const [wingId,       setWingId]       = useState(activeWing?.id || '');
   const [staffFilter,  setStaffFilter]  = useState('regular');
   const [rows,         setRows]         = useState([]);
   const [loading,      setLoading]      = useState(false);
-  const [saving,       setSaving]       = useState(false);
   const [loaded,       setLoaded]       = useState(false);
+  const [showConfirm,  setShowConfirm]  = useState(false);
 
   async function load() {
     if (!monthYear) return;
@@ -82,21 +182,6 @@ function RunPayrollTab({ wings, activeWing, toast }) {
       );
       return row;
     }));
-  }
-
-  async function processPayroll() {
-    setSaving(true);
-    try {
-      const { data } = await api.post('/payroll/batch', {
-        wing_id: wingId || null,
-        month_year: monthYear,
-        rows: displayRows,
-      });
-      toast(data.message, 'success');
-      load();
-    } catch (err) {
-      toast(err.response?.data?.detail || 'Failed to process payroll', 'error');
-    } finally { setSaving(false); }
   }
 
   const totalGross = displayRows.reduce((s, r) => s + (parseFloat(r.gross_salary)     || 0), 0);
@@ -142,8 +227,8 @@ function RunPayrollTab({ wings, activeWing, toast }) {
         </button>
         {loaded && displayRows.length > 0 && (
           <button className="btn btn-primary" style={{ marginLeft: 'auto' }}
-            onClick={processPayroll} disabled={saving}>
-            {saving ? 'Processing…' : `Process ${staffFilter === '3rd_party' ? '3rd Party' : staffFilter === 'all' ? 'All' : 'Regular'} — PKR ${fmt(totalNet)}`}
+            onClick={() => setShowConfirm(true)}>
+            {`Process ${staffFilter === '3rd_party' ? '3rd Party' : staffFilter === 'all' ? 'All' : 'Regular'} — PKR ${fmt(totalNet)}`}
           </button>
         )}
       </div>
@@ -249,6 +334,17 @@ function RunPayrollTab({ wings, activeWing, toast }) {
             Loan deductions are auto-filled from active loans. All fields are editable before processing.
           </p>
         </div>
+      )}
+
+      {showConfirm && (
+        <ProcessModal
+          rows={displayRows}
+          monthYear={monthYear}
+          wingId={wingId}
+          onClose={() => setShowConfirm(false)}
+          onDone={() => { setShowConfirm(false); load(); }}
+          toast={toast}
+        />
       )}
     </div>
   );
