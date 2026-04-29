@@ -5,9 +5,17 @@ import api from '../../lib/api';
 import { formatCurrency, formatDate, formatStatus, statusBadgeClass } from '../../lib/format';
 import { Plus } from 'lucide-react';
 
+function defaultDueDate() {
+  const now = new Date();
+  const target = now.getDate() <= 10
+    ? new Date(now.getFullYear(), now.getMonth(), 10)
+    : new Date(now.getFullYear(), now.getMonth() + 1, 10);
+  return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-10`;
+}
+
 function BillModal({ wings, onClose, onSaved }) {
   const toast = useToast();
-  const [form, setForm] = useState({ wing_id: '', category: '', amount: '', currency_code: 'PKR', exchange_rate: '1', bill_date: new Date().toISOString().split('T')[0], due_date: '', notes: '' });
+  const [form, setForm] = useState({ wing_id: '', category: '', amount: '', currency_code: 'PKR', exchange_rate: '1', bill_date: new Date().toISOString().split('T')[0], due_date: defaultDueDate(), notes: '' });
   const [saving, setSaving] = useState(false);
   function f(k) { return (e) => setForm((p) => ({ ...p, [k]: e.target.value })); }
   async function submit(e) {
