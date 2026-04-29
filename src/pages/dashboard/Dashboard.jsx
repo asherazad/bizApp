@@ -41,7 +41,7 @@ export default function Dashboard() {
         </div>
         <div className="stat-card lime">
           <div className="stat-label">Open POs Remaining</div>
-          <div className="stat-value">{formatCurrency(purchase_orders?.remaining_pkr)}</div>
+          <div className="stat-value">{formatCurrency(purchase_orders?.remaining_value, purchase_orders?.currency || 'USD')}</div>
           <div className="stat-sub">{purchase_orders?.total_count} purchase orders</div>
         </div>
         <div className="stat-card warning">

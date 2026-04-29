@@ -28,11 +28,19 @@ router.get('/', async (req, res) => {
           db.raw("SUM(CASE WHEN status = 'Received' THEN 1 ELSE 0 END) as received_count"),
         ).first(),
 
-      // PO summary
+      // PO summary — remaining = po_value minus already-invoiced amounts
       db('purchase_orders').modify(wf('purchase_orders'))
         .select(
           db.raw('COUNT(*) as total_count'),
-          db.raw("SUM(pkr_equivalent) as total_value_pkr"),
+          db.raw(`SUM(po_value - COALESCE(
+            (SELECT SUM(i.total_amount) FROM invoices i WHERE i.po_id = purchase_orders.id), 0
+          )) as remaining_value`),
+          db.raw(`SUM(
+            pkr_equivalent - COALESCE(
+              (SELECT SUM(i.total_amount) FROM invoices i WHERE i.po_id = purchase_orders.id), 0
+            ) * exchange_rate
+          ) as remaining_pkr`),
+          db.raw("mode() WITHIN GROUP (ORDER BY currency) as currency"),
           db.raw("SUM(CASE WHEN status = 'Active' THEN 1 ELSE 0 END) as active_count"),
         ).first(),
 
