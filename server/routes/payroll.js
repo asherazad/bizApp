@@ -96,13 +96,18 @@ router.post('/batch', async (req, res) => {
       return res.status(400).json({ error: 'month_year and rows[] required' });
     }
 
+    // Pre-fetch resource wing IDs so we can fall back when no global wing filter
+    const resourceIds  = rows.map(r => r.resource_id);
+    const resourceRows = await db('resources').whereIn('id', resourceIds).select('id', 'business_wing_id');
+    const wingByResource = Object.fromEntries(resourceRows.map(r => [r.id, r.business_wing_id]));
+
     await db.transaction(async trx => {
       for (const row of rows) {
         const gross = parseFloat(row.gross_salary) || 0;
         const net   = calcNet(row);
         const payload = {
           resource_id:       row.resource_id,
-          business_wing_id:  wing_id || null,
+          business_wing_id:  wing_id || wingByResource[row.resource_id] || null,
           month_year,
           working_days:      26,
           present_days:      26,
