@@ -103,14 +103,15 @@ router.get('/transactions', async (req, res) => {
 
 router.post('/transactions', async (req, res) => {
   try {
-    const { bank_account_id, wing_id, txn_type, amount, currency, description, reference_type, reference_id, txn_date } = req.body;
-    if (!bank_account_id || !wing_id || !txn_type || !amount || !description || !txn_date) {
+    const { bank_account_id, wing_id, txn_type, amount, currency, description, reference_type, txn_date } = req.body;
+    if (!bank_account_id || !txn_type || !amount || !description || !txn_date) {
       return res.status(400).json({ error: 'Required fields missing' });
     }
     const amt = parseFloat(amount);
     const account = await db('bank_accounts').where({ id: bank_account_id }).first();
     if (!account) return res.status(404).json({ error: 'Bank account not found' });
 
+    const effectiveWingId = wing_id || account.business_wing_id || null;
     const newBalance = txn_type === 'Credit'
       ? parseFloat(account.current_balance) + amt
       : parseFloat(account.current_balance) - amt;
@@ -118,10 +119,10 @@ router.post('/transactions', async (req, res) => {
     const [txn] = await db.transaction(async (trx) => {
       const inserted = await trx('bank_transactions').insert({
         bank_account_id,
-        business_wing_id: wing_id,
+        business_wing_id: effectiveWingId,
         txn_type, amount: amt,
         currency: currency || account.currency || 'PKR',
-        description, reference_type, reference_id, txn_date,
+        description, reference_type, txn_date,
         running_balance: newBalance,
       }).returning('*');
       await trx('bank_accounts').where({ id: bank_account_id })

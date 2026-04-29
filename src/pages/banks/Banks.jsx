@@ -154,14 +154,29 @@ function TransferModal({ fromAccount, onClose, onSaved }) {
   );
 }
 
-function TxnModal({ account, wings, onClose, onSaved }) {
+function TxnModal({ account, onClose, onSaved }) {
   const toast = useToast();
-  const [form, setForm] = useState({ wing_id: account?.wing_id || '', bank_account_id: account?.id || '', type: 'credit', amount: '', currency_code: account?.currency_code || 'PKR', exchange_rate: '1', description: '', category: '', transaction_date: new Date().toISOString().split('T')[0] });
+  const [form, setForm] = useState({
+    txn_type:    'Credit',
+    txn_date:    new Date().toISOString().split('T')[0],
+    amount:      '',
+    currency:    account?.currency || 'PKR',
+    description: '',
+    category:    '',
+  });
   const [saving, setSaving] = useState(false);
   function f(k) { return (e) => setForm((p) => ({ ...p, [k]: e.target.value })); }
   async function submit(e) {
     e.preventDefault(); setSaving(true);
-    try { await api.post('/banks/transactions', form); toast('Transaction recorded', 'success'); onSaved(); }
+    try {
+      await api.post('/banks/transactions', {
+        ...form,
+        bank_account_id: account.id,
+        wing_id: account.business_wing_id || null,
+      });
+      toast('Transaction recorded', 'success');
+      onSaved();
+    }
     catch (err) { toast(err.response?.data?.error || 'Error', 'error'); }
     finally { setSaving(false); }
   }
@@ -173,26 +188,31 @@ function TxnModal({ account, wings, onClose, onSaved }) {
           <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div className="grid-2">
               <div className="form-group"><label className="form-label">Type *</label>
-                <select className="form-control" value={form.type} onChange={f('type')}>
-                  <option value="credit">Credit (In)</option>
-                  <option value="debit">Debit (Out)</option>
+                <select className="form-control" value={form.txn_type} onChange={f('txn_type')}>
+                  <option value="Credit">Credit (In)</option>
+                  <option value="Debit">Debit (Out)</option>
                 </select>
               </div>
-              <div className="form-group"><label className="form-label">Date *</label><input type="date" className="form-control" required value={form.transaction_date} onChange={f('transaction_date')} /></div>
+              <div className="form-group"><label className="form-label">Date *</label>
+                <input type="date" className="form-control" required value={form.txn_date} onChange={f('txn_date')} />
+              </div>
             </div>
             <div className="grid-2">
-              <div className="form-group"><label className="form-label">Amount *</label><input type="number" step="0.01" className="form-control" required value={form.amount} onChange={f('amount')} /></div>
+              <div className="form-group"><label className="form-label">Amount *</label>
+                <input type="number" step="0.01" className="form-control" required value={form.amount} onChange={f('amount')} />
+              </div>
               <div className="form-group"><label className="form-label">Currency</label>
-                <select className="form-control" value={form.currency_code} onChange={f('currency_code')}>
+                <select className="form-control" value={form.currency} onChange={f('currency')}>
                   {['PKR','USD','EUR','AED','GBP'].map((c) => <option key={c}>{c}</option>)}
                 </select>
               </div>
             </div>
-            {form.currency_code !== 'PKR' && (
-              <div className="form-group"><label className="form-label">Exchange Rate (to PKR)</label><input type="number" step="0.0001" className="form-control" value={form.exchange_rate} onChange={f('exchange_rate')} /></div>
-            )}
-            <div className="form-group"><label className="form-label">Description *</label><input className="form-control" required value={form.description} onChange={f('description')} /></div>
-            <div className="form-group"><label className="form-label">Category</label><input className="form-control" placeholder="e.g. Client Payment, Utility, Salary" value={form.category} onChange={f('category')} /></div>
+            <div className="form-group"><label className="form-label">Description *</label>
+              <input className="form-control" required value={form.description} onChange={f('description')} />
+            </div>
+            <div className="form-group"><label className="form-label">Category</label>
+              <input className="form-control" placeholder="e.g. Client Payment, Utility, Salary" value={form.category} onChange={f('category')} />
+            </div>
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
@@ -322,7 +342,7 @@ export default function Banks() {
 
       {modal && <AccountModal wings={wings} onClose={() => setModal(false)} onSaved={() => { setModal(false); loadAccounts(); }} />}
       {editTarget && <EditAccountModal account={editTarget} wings={wings} onClose={() => setEditTarget(null)} onSaved={() => { setEditTarget(null); loadAccounts(); }} />}
-      {txnModal && <TxnModal account={selected} wings={wings} onClose={() => setTxnModal(false)} onSaved={() => { setTxnModal(false); loadTxns(selected?.id); loadAccounts(); }} />}
+      {txnModal && <TxnModal account={selected} onClose={() => setTxnModal(false)} onSaved={() => { setTxnModal(false); loadTxns(selected?.id); loadAccounts(); }} />}
       {transferModal && selected && <TransferModal fromAccount={selected} onClose={() => setTransferModal(false)} onSaved={() => { setTransferModal(false); loadTxns(selected?.id); loadAccounts(); }} />}
 
       {deleteTarget && (
