@@ -779,9 +779,9 @@ function HistoryTab({ wings, toast }) {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={11} style={{ textAlign: 'center', padding: 32 }} className="text-muted">Loading…</td></tr>
+                <tr><td colSpan={12} style={{ textAlign: 'center', padding: 32 }} className="text-muted">Loading…</td></tr>
               ) : displayRuns.length === 0 ? (
-                <tr><td colSpan={11} style={{ textAlign: 'center', padding: 48 }} className="text-muted">
+                <tr><td colSpan={12} style={{ textAlign: 'center', padding: 48 }} className="text-muted">
                   No {staffFilter === '3rd_party' ? '3rd party' : staffFilter === 'all' ? '' : 'regular'} payroll records for {monthLabel(monthYear)}.
                   Use the <strong>Monthly Run</strong> tab to generate.
                 </td></tr>
@@ -798,12 +798,17 @@ function HistoryTab({ wings, toast }) {
                   <td className="font-mono" style={{ textAlign: 'right', color: 'var(--primary)' }}>{fmt(r.overtime_amount)}</td>
                   <td className="font-mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>{fmt(r.net_salary)}</td>
                   <td>
-                    <span className={`badge ${r.status === 'paid' ? 'badge-success' : r.status === 'reversed' ? 'badge-danger' : 'badge-neutral'}`} style={{ fontSize: 10, textTransform: 'capitalize' }}>
-                      {r.status || 'draft'}
-                    </span>
+                    {(() => {
+                      const s = (r.status || '').toLowerCase();
+                      return (
+                        <span className={`badge ${s === 'paid' ? 'badge-success' : s === 'reversed' ? 'badge-danger' : 'badge-neutral'}`} style={{ fontSize: 10, textTransform: 'capitalize' }}>
+                          {r.status || 'draft'}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td>
-                    {r.status === 'paid' && (
+                    {(r.status || '').toLowerCase() === 'paid' && (
                       <button
                         className="btn btn-secondary btn-sm"
                         style={{ fontSize: 11, padding: '3px 8px', color: 'var(--danger, #dc3545)' }}
