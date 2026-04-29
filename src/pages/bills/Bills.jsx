@@ -15,7 +15,7 @@ function defaultDueDate() {
 
 function BillModal({ wings, onClose, onSaved }) {
   const toast = useToast();
-  const [form, setForm] = useState({ wing_id: '', category: '', amount: '', currency_code: 'PKR', exchange_rate: '1', bill_date: new Date().toISOString().split('T')[0], due_date: defaultDueDate(), notes: '' });
+  const [form, setForm] = useState({ wing_id: '', bill_type: '', description: '', amount: '', bill_date: new Date().toISOString().split('T')[0], due_date: defaultDueDate(), reference: '', notes: '' });
   const [saving, setSaving] = useState(false);
   function f(k) { return (e) => setForm((p) => ({ ...p, [k]: e.target.value })); }
   async function submit(e) {
@@ -34,18 +34,22 @@ function BillModal({ wings, onClose, onSaved }) {
               <div className="form-group"><label className="form-label">Wing *</label>
                 <select className="form-control" required value={form.wing_id} onChange={f('wing_id')}><option value="">Select…</option>{wings.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
               </div>
-              <div className="form-group"><label className="form-label">Category *</label><input className="form-control" required placeholder="Electricity, Internet, Rent…" value={form.category} onChange={f('category')} /></div>
+              <div className="form-group"><label className="form-label">Bill Type *</label>
+                <input className="form-control" required placeholder="Electricity, Internet, Rent…" value={form.bill_type} onChange={f('bill_type')} />
+              </div>
+            </div>
+            <div className="form-group"><label className="form-label">Description *</label>
+              <input className="form-control" required placeholder="e.g. PTCL Broadband — May 2026" value={form.description} onChange={f('description')} />
             </div>
             <div className="grid-2">
-              <div className="form-group"><label className="form-label">Amount *</label><input type="number" step="0.01" className="form-control" required value={form.amount} onChange={f('amount')} /></div>
-              <div className="form-group"><label className="form-label">Currency</label>
-                <select className="form-control" value={form.currency_code} onChange={f('currency_code')}>{['PKR','USD','EUR','AED','GBP'].map((c) => <option key={c}>{c}</option>)}</select>
-              </div>
+              <div className="form-group"><label className="form-label">Amount (PKR) *</label><input type="number" step="0.01" className="form-control" required value={form.amount} onChange={f('amount')} /></div>
+              <div className="form-group"><label className="form-label">Reference</label><input className="form-control" placeholder="Invoice / bill no." value={form.reference} onChange={f('reference')} /></div>
             </div>
             <div className="grid-2">
               <div className="form-group"><label className="form-label">Bill Date *</label><input type="date" className="form-control" required value={form.bill_date} onChange={f('bill_date')} /></div>
               <div className="form-group"><label className="form-label">Due Date</label><input type="date" className="form-control" value={form.due_date} onChange={f('due_date')} /></div>
             </div>
+            <div className="form-group"><label className="form-label">Notes</label><input className="form-control" value={form.notes} onChange={f('notes')} /></div>
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
@@ -89,19 +93,19 @@ export default function Bills() {
       <div className="card">
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>Category</th><th>Vendor</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Bill Type</th><th>Description</th><th>Bill Date</th><th>Due Date</th><th>Amount</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {loading ? <tr><td colSpan={7} className="text-muted" style={{ textAlign: 'center', padding: 24 }}>Loading…</td></tr>
                 : bills.length === 0 ? <tr><td colSpan={7} className="text-muted" style={{ textAlign: 'center', padding: 24 }}>No bills</td></tr>
                 : bills.map((b) => (
                   <tr key={b.id}>
-                    <td style={{ fontWeight: 500 }}>{b.category}</td>
-                    <td className="text-muted">{b.vendor_name || '—'}</td>
+                    <td style={{ fontWeight: 500 }}>{b.bill_type}</td>
+                    <td className="text-muted">{b.description || '—'}</td>
                     <td className="text-muted">{formatDate(b.bill_date)}</td>
                     <td className="text-muted">{formatDate(b.due_date)}</td>
-                    <td className="font-mono">{formatCurrency(b.pkr_amount)}</td>
+                    <td className="font-mono">{formatCurrency(b.amount)}</td>
                     <td><span className={`badge ${statusBadgeClass(b.status)}`}>{formatStatus(b.status)}</span></td>
-                    <td>{b.status === 'pending' && <button className="btn btn-secondary btn-sm" onClick={() => markPaid(b)}>Mark Paid</button>}</td>
+                    <td>{b.status !== 'paid' && <button className="btn btn-secondary btn-sm" onClick={() => markPaid(b)}>Mark Paid</button>}</td>
                   </tr>
                 ))}
             </tbody>
