@@ -225,6 +225,51 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// ─── POST /:id/reverse ────────────────────────────────────────────────────────
+router.post('/:id/reverse', async (req, res) => {
+  try {
+    const { bank_account_id } = req.body;
+    const run = await db('payroll_runs as p')
+      .join('resources as r', 'r.id', 'p.resource_id')
+      .where('p.id', req.params.id)
+      .select('p.*', 'r.full_name as resource_name')
+      .first();
+    if (!run) return res.status(404).json({ error: 'Not found' });
+    if (run.status === 'reversed') return res.status(400).json({ error: 'Already reversed' });
+
+    const net = parseFloat(run.net_salary) || 0;
+    const [y, m] = run.month_year.split('-');
+    const label = new Date(parseInt(y), parseInt(m) - 1, 1)
+      .toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+    await db.transaction(async trx => {
+      await trx('payroll_runs').where({ id: req.params.id }).update({ status: 'reversed' });
+
+      if (bank_account_id) {
+        const account = await trx('bank_accounts').where({ id: bank_account_id }).first();
+        if (!account) throw new Error('Bank account not found');
+        const newBalance = parseFloat(account.current_balance) + net;
+        await trx('bank_transactions').insert({
+          bank_account_id,
+          business_wing_id: run.business_wing_id,
+          txn_type:         'Credit',
+          amount:           net,
+          currency:         account.currency || 'PKR',
+          description:      `Payroll Reversal — ${label} (${run.resource_name})`,
+          reference_type:   'reversal',
+          txn_date:         new Date().toISOString().split('T')[0],
+          running_balance:  newBalance,
+        });
+        await trx('bank_accounts').where({ id: bank_account_id }).update({ current_balance: newBalance });
+      }
+    });
+
+    res.json({ message: 'Payroll reversed', net_credited: net });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error', detail: err.message });
+  }
+});
+
 // ─── DELETE /:id ──────────────────────────────────────────────────────────────
 router.delete('/:id', async (req, res) => {
   try {

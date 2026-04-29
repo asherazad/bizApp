@@ -606,13 +606,80 @@ against staff salaries as per list.</p>
   );
 }
 
+// ─── Reverse Payroll Modal ────────────────────────────────────────────────────
+function ReverseModal({ run, onClose, onDone, toast }) {
+  const [accounts,      setAccounts]      = useState([]);
+  const [bankAccountId, setBankAccountId] = useState('');
+  const [saving,        setSaving]        = useState(false);
+
+  useEffect(() => {
+    api.get('/banks/accounts').then(r => setAccounts(r.data)).catch(() => {});
+  }, []);
+
+  async function confirm() {
+    setSaving(true);
+    try {
+      const { data } = await api.post(`/payroll/${run.id}/reverse`, {
+        bank_account_id: bankAccountId || undefined,
+      });
+      toast(data.message + (bankAccountId ? ` — PKR ${fmt(run.net_salary)} credited back` : ''), 'success');
+      onDone();
+    } catch (err) {
+      toast(err.response?.data?.detail || err.response?.data?.error || 'Reversal failed', 'error');
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3 style={{ margin: 0 }}>Reverse Payroll</h3>
+          <button className="btn btn-secondary btn-sm" onClick={onClose}>✕</button>
+        </div>
+        <div style={{ padding: '16px 20px' }}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>{run.resource_name}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>{monthLabel(run.month_year)}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span className="text-muted" style={{ fontSize: 12 }}>Net Salary</span>
+              <span style={{ fontWeight: 700, color: 'var(--danger)' }}>PKR {fmt(run.net_salary)}</span>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Credit back to Bank Account <span className="text-muted" style={{ fontSize: 11 }}>(optional)</span></label>
+            <select className="form-control" value={bankAccountId} onChange={e => setBankAccountId(e.target.value)}>
+              <option value="">— No bank credit —</option>
+              {accounts.map(a => (
+                <option key={a.id} value={a.id}>
+                  {a.bank_name} — {a.account_title} (PKR {fmt(a.current_balance)})
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
+            This will mark the salary as <strong>Reversed</strong> and optionally add a credit transaction to the selected account.
+          </p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+            <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+            <button className="btn btn-danger" onClick={confirm} disabled={saving}>
+              {saving ? 'Reversing…' : 'Confirm Reversal'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── History Tab ──────────────────────────────────────────────────────────────
 function HistoryTab({ wings, toast }) {
-  const [monthYear,   setMonthYear]   = useState(currentMonthYear());
-  const [wingId,      setWingId]      = useState('');
-  const [staffFilter, setStaffFilter] = useState('regular');
-  const [runs,        setRuns]        = useState([]);
-  const [loading,     setLoading]     = useState(false);
+  const [monthYear,     setMonthYear]     = useState(currentMonthYear());
+  const [wingId,        setWingId]        = useState('');
+  const [staffFilter,   setStaffFilter]   = useState('regular');
+  const [runs,          setRuns]          = useState([]);
+  const [loading,       setLoading]       = useState(false);
+  const [reverseTarget, setReverseTarget] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -707,6 +774,7 @@ function HistoryTab({ wings, toast }) {
                 <th style={{ textAlign: 'right' }}>Overtime</th>
                 <th style={{ textAlign: 'right' }}>Net Salary</th>
                 <th>Status</th>
+                <th style={{ width: 80 }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -730,9 +798,21 @@ function HistoryTab({ wings, toast }) {
                   <td className="font-mono" style={{ textAlign: 'right', color: 'var(--primary)' }}>{fmt(r.overtime_amount)}</td>
                   <td className="font-mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>{fmt(r.net_salary)}</td>
                   <td>
-                    <span className={`badge ${r.status === 'paid' ? 'badge-success' : 'badge-neutral'}`} style={{ fontSize: 10, textTransform: 'capitalize' }}>
+                    <span className={`badge ${r.status === 'paid' ? 'badge-success' : r.status === 'reversed' ? 'badge-danger' : 'badge-neutral'}`} style={{ fontSize: 10, textTransform: 'capitalize' }}>
                       {r.status || 'draft'}
                     </span>
+                  </td>
+                  <td>
+                    {r.status === 'paid' && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ fontSize: 11, padding: '3px 8px', color: 'var(--danger, #dc3545)' }}
+                        onClick={() => setReverseTarget(r)}
+                        title="Reverse this salary payment"
+                      >
+                        Reverse
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -758,13 +838,22 @@ function HistoryTab({ wings, toast }) {
                     {fmt(displayRuns.reduce((s,r) => s+(parseFloat(r.overtime_amount)||0),0))}
                   </td>
                   <td className="font-mono" style={{ textAlign: 'right', color: 'var(--success)' }}>{fmt(totalNet)}</td>
-                  <td />
+                  <td colSpan={2} />
                 </tr>
               </tfoot>
             )}
           </table>
         </div>
       </div>
+
+      {reverseTarget && (
+        <ReverseModal
+          run={reverseTarget}
+          onClose={() => setReverseTarget(null)}
+          onDone={() => { setReverseTarget(null); load(); }}
+          toast={toast}
+        />
+      )}
     </div>
   );
 }
