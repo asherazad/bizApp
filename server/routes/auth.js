@@ -65,6 +65,21 @@ router.get('/me', authenticate, async (req, res) => {
   }
 });
 
+router.put('/profile', authenticate, async (req, res) => {
+  try {
+    const { full_name, email } = req.body;
+    if (!full_name || !email) return res.status(400).json({ error: 'full_name and email required' });
+    const [user] = await db('users')
+      .where({ id: req.user.id })
+      .update({ full_name, email: email.toLowerCase().trim() })
+      .returning('id', 'full_name', 'email', 'role');
+    res.json({ ...user, name: user.full_name });
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Email already exists' });
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.post('/change-password', authenticate, async (req, res) => {
   try {
     const { current_password, new_password } = req.body;

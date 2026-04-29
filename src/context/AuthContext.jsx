@@ -37,6 +37,14 @@ export function AuthProvider({ children }) {
     return data;
   }, []);
 
+  const updateUser = useCallback((patch) => {
+    setUser((prev) => {
+      const next = { ...prev, ...patch };
+      localStorage.setItem('nexus_user', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem('nexus_token');
     localStorage.removeItem('nexus_user');
@@ -47,7 +55,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, wings, activeWing, setActiveWing, login, logout }}>
+    <AuthContext.Provider value={{ user, wings, activeWing, setActiveWing, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );
