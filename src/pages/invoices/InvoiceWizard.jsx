@@ -198,7 +198,7 @@ function StepUpload({ onExtracted, uploadedFile, setUploadedFile }) {
 }
 
 // ─── Step 2 — Review Fields ───────────────────────────────────────────────────
-function StepReview({ form, setForm, lineItems, setLineItems }) {
+function StepReview({ form, setForm, lineItems, setLineItems, clients }) {
   const subtotal = lineItems.reduce((s, i) => s + parseFloat(i.amount||0), 0);
   const taxAmt   = parseFloat(form.tax_amount||0);
   const total    = subtotal + taxAmt;
@@ -217,12 +217,18 @@ function StepReview({ form, setForm, lineItems, setLineItems }) {
         </div>
         <div className="form-group">
           <label className="form-label">Vendor (From)</label>
-          <input className="form-control" value={form.vendor_name} onChange={f('vendor_name')} placeholder="Vendor / Supplier name"/>
+          <input className="form-control" list="invoice-vendors-list" value={form.vendor_name} onChange={f('vendor_name')} placeholder="Select or type vendor name"/>
+          <datalist id="invoice-vendors-list">
+            {(clients||[]).map(c => <option key={c.id} value={c.name}/>)}
+          </datalist>
         </div>
       </div>
       <div className="form-group">
         <label className="form-label">Client / Bill To</label>
-        <input className="form-control" value={form.client_name} onChange={f('client_name')} placeholder="Client or company name"/>
+        <input className="form-control" list="invoice-clients-list" value={form.client_name} onChange={f('client_name')} placeholder="Select or type client name"/>
+        <datalist id="invoice-clients-list">
+          {(clients||[]).map(c => <option key={c.id} value={c.name}/>)}
+        </datalist>
       </div>
       <div className="grid-2">
         <div className="form-group">
@@ -685,6 +691,11 @@ export default function InvoiceWizard({ wings, mode = 'import', onClose, onSaved
 
   const [step, setStep]     = useState(startStep);
   const [saving, setSaving] = useState(false);
+  const [clients, setClients] = useState([]);
+
+  useEffect(() => {
+    api.get('/clients').then(r => setClients(r.data)).catch(() => {});
+  }, []);
 
   // Step 1 state (file upload)
   const [uploadedFile, setUploadedFile] = useState(null); // { temp_file_path, file_name, file_size, file_type }
@@ -801,7 +812,7 @@ export default function InvoiceWizard({ wings, mode = 'import', onClose, onSaved
 
   const stepContent = {
     1: <StepUpload onExtracted={onExtracted} uploadedFile={uploadedFile} setUploadedFile={setUploadedFile}/>,
-    2: <StepReview form={form} setForm={setForm} lineItems={lineItems} setLineItems={setLineItems}/>,
+    2: <StepReview form={form} setForm={setForm} lineItems={lineItems} setLineItems={setLineItems} clients={clients}/>,
     3: <StepPO form={form} totalAmount={totalAmount} currency={form.currency} exchRate={exchRate} selectedPO={selectedPO} setSelectedPO={setSelectedPO}/>,
     4: <StepWings wings={wings} totalAmount={totalAmount} currency={form.currency} exchRate={exchRate} wingMode={wingMode} setWingMode={setWingMode} singleWingId={singleWingId} setSingleWingId={setSingleWingId} wingSplits={wingSplits} setWingSplits={setWingSplits} lineItems={lineItems} setLineItems={setLineItems}/>,
     5: <StepConfirm form={form} lineItems={lineItems} selectedPO={selectedPO} wings={wings} wingMode={wingMode} singleWingId={singleWingId} wingSplits={wingSplits} autoSingleWing={autoSingleWing}/>,
