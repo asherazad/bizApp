@@ -7,22 +7,19 @@ router.use(authenticate);
 // ─── GET /  — list loans (with resource name + total repaid) ─────────────────
 router.get('/', async (req, res) => {
   try {
-    const { wing_id, resource_id, status } = req.query;
+    const { resource_id, status } = req.query;
 
     let q = db('loan_records as l')
       .join('resources as r', 'r.id', 'l.resource_id')
-      .leftJoin('business_wings as bw', 'bw.id', 'l.business_wing_id')
       .select(
         'l.*',
         'r.full_name as resource_name',
-        'bw.name as wing_name',
         db.raw(`COALESCE(
           (SELECT SUM(rp.amount) FROM loan_repayments rp WHERE rp.loan_id = l.id), 0
         ) as total_repaid`)
       )
       .orderBy('l.issued_date', 'desc');
 
-    if (wing_id)     q = q.where('l.business_wing_id', wing_id);
     if (resource_id) q = q.where('l.resource_id', resource_id);
     if (status)      q = q.where('l.status', status);
     else             q = q.whereIn('l.status', ['active', 'settled', 'written_off']);
@@ -36,7 +33,7 @@ router.get('/', async (req, res) => {
 // ─── POST /  — create new loan or advance ────────────────────────────────────
 router.post('/', async (req, res) => {
   try {
-    const { resource_id, business_wing_id, loan_type, amount, issued_date, monthly_installment, purpose, notes } = req.body;
+    const { resource_id, loan_type, amount, issued_date, monthly_installment, purpose, notes } = req.body;
     if (!resource_id || !amount) {
       return res.status(400).json({ error: 'resource_id and amount are required' });
     }
@@ -45,7 +42,6 @@ router.post('/', async (req, res) => {
 
     const [loan] = await db('loan_records').insert({
       resource_id,
-      business_wing_id: business_wing_id || null,
       loan_type:           loan_type    || 'loan',
       amount:              amt,
       remaining_balance:   amt,

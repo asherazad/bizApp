@@ -21,10 +21,10 @@ function ProgressBar({ value, max }) {
 }
 
 // ─── Add Loan Modal ───────────────────────────────────────────────────────────
-function AddLoanModal({ wings, onClose, onSaved, toast }) {
+function AddLoanModal({ onClose, onSaved, toast }) {
   const [resources, setResources] = useState([]);
   const [form, setForm] = useState({
-    resource_id: '', business_wing_id: '', loan_type: 'loan',
+    resource_id: '', loan_type: 'loan',
     amount: '', issued_date: new Date().toISOString().split('T')[0],
     monthly_installment: '', purpose: '', notes: '',
   });
@@ -44,7 +44,6 @@ function AddLoanModal({ wings, onClose, onSaved, toast }) {
         ...form,
         amount:              parseFloat(form.amount)              || 0,
         monthly_installment: parseFloat(form.monthly_installment) || 0,
-        business_wing_id:    form.business_wing_id || null,
       });
       toast(`${form.loan_type === 'advance' ? 'Advance' : 'Loan'} created successfully`, 'success');
       onSaved();
@@ -74,13 +73,6 @@ function AddLoanModal({ wings, onClose, onSaved, toast }) {
               <select className="form-control" value={form.loan_type} onChange={f('loan_type')}>
                 <option value="loan">Loan</option>
                 <option value="advance">Salary Advance</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Business Wing</label>
-              <select className="form-control" value={form.business_wing_id} onChange={f('business_wing_id')}>
-                <option value="">None</option>
-                {wings.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
             </div>
             <div className="form-group">
@@ -243,7 +235,7 @@ function HistoryModal({ loan, onClose }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function Loans() {
-  const { activeWing, wings } = useAuth();
+  const { activeWing } = useAuth();
   const toast = useToast();
   const [loans,    setLoans]    = useState([]);
   const [loading,  setLoading]  = useState(true);
@@ -256,7 +248,6 @@ export default function Loans() {
     setLoading(true);
     try {
       const params = {
-        ...(activeWing?.id ? { wing_id: activeWing.id } : {}),
         ...(filter !== 'all' ? { status: filter } : {}),
       };
       const { data } = await api.get('/loans', { params });
@@ -432,7 +423,6 @@ export default function Loans() {
 
       {addOpen && (
         <AddLoanModal
-          wings={wings || []}
           onClose={() => setAddOpen(false)}
           onSaved={() => { setAddOpen(false); load(); }}
           toast={toast}
