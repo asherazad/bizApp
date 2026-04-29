@@ -121,6 +121,64 @@ router.post('/transactions', async (req, res) => {
   }
 });
 
+// ─── Transfer (Loan) between accounts ────────────────────────────────────────
+router.post('/transfer', async (req, res) => {
+  try {
+    const { from_account_id, to_account_id, amount, txn_date, description } = req.body;
+    if (!from_account_id || !to_account_id || !amount || !txn_date) {
+      return res.status(400).json({ error: 'from_account_id, to_account_id, amount, txn_date required' });
+    }
+    if (from_account_id === to_account_id) {
+      return res.status(400).json({ error: 'Cannot transfer to the same account' });
+    }
+    const amt = parseFloat(amount);
+    if (amt <= 0) return res.status(400).json({ error: 'Amount must be positive' });
+
+    const [fromAcc, toAcc] = await Promise.all([
+      db('bank_accounts').where({ id: from_account_id }).first(),
+      db('bank_accounts').where({ id: to_account_id }).first(),
+    ]);
+    if (!fromAcc) return res.status(404).json({ error: 'Source account not found' });
+    if (!toAcc)   return res.status(404).json({ error: 'Destination account not found' });
+
+    const fromNewBalance = parseFloat(fromAcc.current_balance) - amt;
+    const toNewBalance   = parseFloat(toAcc.current_balance)   + amt;
+    const note = description ? ` — ${description}` : '';
+
+    await db.transaction(async (trx) => {
+      await trx('bank_transactions').insert({
+        bank_account_id:  from_account_id,
+        business_wing_id: fromAcc.business_wing_id,
+        txn_type:         'Debit',
+        amount:           amt,
+        currency:         fromAcc.currency || 'PKR',
+        description:      `Transfer (Loan) to ${toAcc.bank_name} — ${toAcc.account_title}${note}`,
+        reference_type:   'transfer',
+        txn_date,
+        running_balance:  fromNewBalance,
+      });
+      await trx('bank_transactions').insert({
+        bank_account_id:  to_account_id,
+        business_wing_id: toAcc.business_wing_id,
+        txn_type:         'Credit',
+        amount:           amt,
+        currency:         toAcc.currency || 'PKR',
+        description:      `Transfer (Loan) from ${fromAcc.bank_name} — ${fromAcc.account_title}${note}`,
+        reference_type:   'transfer',
+        txn_date,
+        running_balance:  toNewBalance,
+      });
+      await trx('bank_accounts').where({ id: from_account_id }).update({ current_balance: fromNewBalance });
+      await trx('bank_accounts').where({ id: to_account_id   }).update({ current_balance: toNewBalance   });
+    });
+
+    res.json({ message: 'Transfer recorded', from_balance: fromNewBalance, to_balance: toNewBalance });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error', detail: err.message });
+  }
+});
+
 router.delete('/transactions/:id', async (req, res) => {
   try {
     const txn = await db('bank_transactions').where({ id: req.params.id }).first();

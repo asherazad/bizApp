@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
-import { Plus, Landmark, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { Plus, Landmark, ArrowUpRight, ArrowDownLeft, ArrowLeftRight } from 'lucide-react';
 
 function AccountModal({ onClose, onSaved, wings }) {
   const toast = useToast();
@@ -46,6 +46,64 @@ function AccountModal({ onClose, onSaved, wings }) {
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function TransferModal({ fromAccount, onClose, onSaved }) {
+  const toast = useToast();
+  const [allAccounts, setAllAccounts] = useState([]);
+  const [form, setForm] = useState({ to_account_id: '', amount: '', txn_date: new Date().toISOString().split('T')[0], description: '' });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get('/banks/accounts').then(r => setAllAccounts(r.data)).catch(() => {});
+  }, []);
+
+  function f(k) { return (e) => setForm(p => ({ ...p, [k]: e.target.value })); }
+
+  async function submit(e) {
+    e.preventDefault(); setSaving(true);
+    try {
+      await api.post('/banks/transfer', { from_account_id: fromAccount.id, ...form });
+      toast('Transfer recorded', 'success');
+      onSaved();
+    } catch (err) {
+      toast(err.response?.data?.error || 'Error', 'error');
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header"><h3>Transfer / Loan to Account</h3><button className="btn btn-secondary btn-sm" onClick={onClose}>✕</button></div>
+        <form onSubmit={submit}>
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="form-group">
+              <label className="form-label">From</label>
+              <input className="form-control" disabled value={`${fromAccount.bank_name} — ${fromAccount.account_title}`} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">To Account *</label>
+              <select className="form-control" required value={form.to_account_id} onChange={f('to_account_id')}>
+                <option value="">Select account…</option>
+                {allAccounts.filter(a => a.id !== fromAccount.id).map(a => (
+                  <option key={a.id} value={a.id}>{a.bank_name} — {a.account_title} ({a.wing_name})</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid-2">
+              <div className="form-group"><label className="form-label">Amount *</label><input type="number" step="0.01" className="form-control" required value={form.amount} onChange={f('amount')} /></div>
+              <div className="form-group"><label className="form-label">Date *</label><input type="date" className="form-control" required value={form.txn_date} onChange={f('txn_date')} /></div>
+            </div>
+            <div className="form-group"><label className="form-label">Note</label><input className="form-control" placeholder="Optional note" value={form.description} onChange={f('description')} /></div>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Processing…' : 'Transfer'}</button>
           </div>
         </form>
       </div>
@@ -111,6 +169,7 @@ export default function Banks() {
   const [transactions, setTransactions] = useState([]);
   const [modal, setModal]           = useState(null);
   const [txnModal, setTxnModal]     = useState(false);
+  const [transferModal, setTransferModal] = useState(false);
   const [loading, setLoading]       = useState(true);
 
   async function loadAccounts() {
@@ -135,6 +194,7 @@ export default function Banks() {
       <div className="page-header">
         <h1>Bank Accounts</h1>
         <div className="flex gap-2">
+          {selected && <button className="btn btn-secondary" onClick={() => setTransferModal(true)}><ArrowLeftRight size={15} /> Transfer</button>}
           {selected && <button className="btn btn-secondary" onClick={() => setTxnModal(true)}><Plus size={15} /> Add Transaction</button>}
           <button className="btn btn-primary" onClick={() => setModal(true)}><Plus size={15} /> Add Account</button>
         </div>
@@ -149,7 +209,7 @@ export default function Banks() {
             <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>{a.wing_name}</div>
             <div style={{ fontWeight: 600 }}>{a.bank_name}</div>
             <div className="text-muted">{a.account_title}</div>
-            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy)', marginTop: 6 }}>
+            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: a.current_balance < 0 ? 'var(--danger, #dc3545)' : 'var(--navy)', marginTop: 6 }}>
               {formatCurrency(a.current_balance, a.currency_code)}
             </div>
           </div>
@@ -175,16 +235,16 @@ export default function Banks() {
                   ? <tr><td colSpan={6} className="text-muted" style={{ textAlign: 'center', padding: 24 }}>No transactions</td></tr>
                   : transactions.map((t) => (
                     <tr key={t.id}>
-                      <td className="text-muted">{formatDate(t.transaction_date)}</td>
+                      <td className="text-muted">{formatDate(t.txn_date)}</td>
                       <td>{t.description}</td>
-                      <td className="text-muted">{t.category || '—'}</td>
+                      <td className="text-muted">{t.reference_type || '—'}</td>
                       <td>
-                        {t.type === 'credit'
+                        {t.txn_type === 'Credit'
                           ? <span className="badge badge-success"><ArrowDownLeft size={11} /> Credit</span>
                           : <span className="badge badge-danger"><ArrowUpRight size={11} /> Debit</span>}
                       </td>
-                      <td className="text-right font-mono">{formatCurrency(t.amount, t.currency_code)}</td>
-                      <td className="text-right font-mono text-muted">{t.balance_after != null ? formatCurrency(t.balance_after, selected.currency_code) : '—'}</td>
+                      <td className="text-right font-mono">{formatCurrency(t.amount, t.currency)}</td>
+                      <td className="text-right font-mono text-muted">{t.running_balance != null ? formatCurrency(t.running_balance, selected.currency_code || selected.currency) : '—'}</td>
                     </tr>
                   ))}
               </tbody>
@@ -195,6 +255,7 @@ export default function Banks() {
 
       {modal && <AccountModal wings={wings} onClose={() => setModal(false)} onSaved={() => { setModal(false); loadAccounts(); }} />}
       {txnModal && <TxnModal account={selected} wings={wings} onClose={() => setTxnModal(false)} onSaved={() => { setTxnModal(false); loadTxns(selected?.id); loadAccounts(); }} />}
+      {transferModal && selected && <TransferModal fromAccount={selected} onClose={() => setTransferModal(false)} onSaved={() => { setTransferModal(false); loadTxns(selected?.id); loadAccounts(); }} />}
     </div>
   );
 }
