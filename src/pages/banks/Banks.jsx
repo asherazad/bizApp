@@ -186,6 +186,11 @@ function TxnModal({ account, onClose, onSaved }) {
         <div className="modal-header"><h3>Add Transaction</h3><button className="btn btn-secondary btn-sm" onClick={onClose}>✕</button></div>
         <form onSubmit={submit}>
           <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13 }}>
+              <span className="text-muted">Account: </span>
+              <strong>{account?.bank_name} — {account?.account_title}</strong>
+              <span className="text-muted" style={{ marginLeft: 8 }}>Balance: {formatCurrency(account?.current_balance, account?.currency)}</span>
+            </div>
             <div className="grid-2">
               <div className="form-group"><label className="form-label">Type *</label>
                 <select className="form-control" value={form.txn_type} onChange={f('txn_type')}>
@@ -240,10 +245,22 @@ export default function Banks() {
   const [reversing, setReversing]   = useState(false);
   const [loading, setLoading]       = useState(true);
 
-  async function loadAccounts() {
+  async function loadAccounts(preserveSelected = false) {
     setLoading(true);
     const params = activeWing?.id ? { wing_id: activeWing.id } : {};
-    try { const r = await api.get('/banks/accounts', { params }); setAccounts(r.data); if (r.data.length) setSelected(r.data[0]); }
+    try {
+      const r = await api.get('/banks/accounts', { params });
+      setAccounts(r.data);
+      if (preserveSelected && selected) {
+        const updated = r.data.find(a => a.id === selected.id);
+        setSelected(updated || r.data[0] || null);
+      } else if (!selected && r.data.length) {
+        setSelected(r.data[0]);
+      } else if (selected) {
+        const updated = r.data.find(a => a.id === selected.id);
+        if (updated) setSelected(updated);
+      }
+    }
     catch { toast('Failed to load accounts', 'error'); }
     finally { setLoading(false); }
   }
@@ -274,7 +291,7 @@ export default function Banks() {
       toast('Transaction reversed and balance restored', 'success');
       setReverseTxn(null);
       loadTxns(selected?.id);
-      loadAccounts();
+      loadAccounts(true);
     } catch (err) {
       toast(err.response?.data?.error || 'Error reversing transaction', 'error');
     } finally { setReversing(false); }
@@ -367,8 +384,8 @@ export default function Banks() {
 
       {modal && <AccountModal wings={wings} onClose={() => setModal(false)} onSaved={() => { setModal(false); loadAccounts(); }} />}
       {editTarget && <EditAccountModal account={editTarget} wings={wings} onClose={() => setEditTarget(null)} onSaved={() => { setEditTarget(null); loadAccounts(); }} />}
-      {txnModal && <TxnModal account={selected} onClose={() => setTxnModal(false)} onSaved={() => { setTxnModal(false); loadTxns(selected?.id); loadAccounts(); }} />}
-      {transferModal && selected && <TransferModal fromAccount={selected} onClose={() => setTransferModal(false)} onSaved={() => { setTransferModal(false); loadTxns(selected?.id); loadAccounts(); }} />}
+      {txnModal && <TxnModal account={selected} onClose={() => setTxnModal(false)} onSaved={() => { setTxnModal(false); loadTxns(selected?.id); loadAccounts(true); }} />}
+      {transferModal && selected && <TransferModal fromAccount={selected} onClose={() => setTransferModal(false)} onSaved={() => { setTransferModal(false); loadTxns(selected?.id); loadAccounts(true); }} />}
 
       {reverseTxn && (
         <div className="modal-overlay" onClick={() => setReverseTxn(null)}>
