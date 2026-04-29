@@ -119,7 +119,10 @@ function AddModal({ wings, onClose, onSaved, toast }) {
       });
       toast('Resource created', 'success');
       onSaved();
-    } catch (err) { toast(err.response?.data?.error || 'Error', 'error'); }
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.response?.data?.error || err.message || 'Error';
+      toast(msg, 'error');
+    }
     finally { setSaving(false); }
   }
 
@@ -285,7 +288,10 @@ function DetailModal({ resource, wings, onClose, onSaved, toast }) {
       toast('Saved', 'success');
       setEditing(false);
       onSaved();
-    } catch (err) { toast(err.response?.data?.error || 'Error', 'error'); }
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.response?.data?.error || err.message || 'Error';
+      toast(msg, 'error');
+    }
     finally { setSaving(false); }
   }
 

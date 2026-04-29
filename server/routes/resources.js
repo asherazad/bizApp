@@ -55,6 +55,7 @@ function normaliseRow(row, wings) {
     status:            employmentStatus || 'active',
     basic_salary:      grossSalary,
     annual_leaves:     0,
+    allowances:        {},
   };
 }
 
@@ -89,6 +90,7 @@ function buildInsertPayload(body) {
     status:            es || 'active',
     basic_salary:      gs,
     annual_leaves:     0,
+    allowances:        {},
   };
 }
 
