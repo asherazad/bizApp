@@ -19,7 +19,7 @@ const NAV = [
   { to: '/resources',       icon: UserCheck,        label: 'Resources' },
   { to: '/attendance',      icon: Calendar,         label: 'Attendance' },
   { to: '/loans',           icon: HandCoins,        label: 'Loans & Advances' },
-  { to: '/payroll',         icon: Wallet,           label: 'Payroll & Loans' },
+  { to: '/payroll',         icon: Wallet,           label: 'Payroll & Salary' },
   { section: 'Operations' },
   { to: '/travel',          icon: Plane,            label: 'Travel' },
   { to: '/subscriptions',   icon: RefreshCw,        label: 'Subscriptions' },
