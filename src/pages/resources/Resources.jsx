@@ -23,7 +23,7 @@ const EMPTY_FORM = {
   full_name: '', designation: '', cnic: '', account_number: '',
   bank_name: '', mode_of_transfer: '', job_type: '', employment_status: '',
   join_date: '', gross_salary: '', tax_amount: '', net_salary: '',
-  business_wing_id: '',
+  business_wing_id: '', last_review_date: '', last_increment_amount: '',
 };
 
 // ─── Shared resource form fields ──────────────────────────────────────────────
@@ -95,6 +95,14 @@ function ResourceFormFields({ form, onChange, wings }) {
         <label className="form-label">Net Salary (PKR)</label>
         <input type="number" className="form-control" value={form.net_salary} onChange={f('net_salary')} />
       </div>
+      <div className="form-group">
+        <label className="form-label">Last Review Date</label>
+        <input type="date" className="form-control" value={form.last_review_date || ''} onChange={f('last_review_date')} />
+      </div>
+      <div className="form-group">
+        <label className="form-label">Last Increment Amount (PKR)</label>
+        <input type="number" className="form-control" value={form.last_increment_amount || ''} onChange={f('last_increment_amount')} />
+      </div>
     </div>
   );
 }
@@ -112,10 +120,12 @@ function AddModal({ wings, onClose, onSaved, toast }) {
     try {
       await api.post('/resources', {
         ...form,
-        business_wing_id: form.business_wing_id || null,
-        gross_salary: parseFloat(form.gross_salary) || 0,
-        tax_amount:   parseFloat(form.tax_amount)   || 0,
-        net_salary:   parseFloat(form.net_salary)   || 0,
+        business_wing_id:      form.business_wing_id      || null,
+        gross_salary:          parseFloat(form.gross_salary)          || 0,
+        tax_amount:            parseFloat(form.tax_amount)            || 0,
+        net_salary:            parseFloat(form.net_salary)            || 0,
+        last_review_date:      form.last_review_date      || null,
+        last_increment_amount: parseFloat(form.last_increment_amount) || 0,
       });
       toast('Resource created', 'success');
       onSaved();
@@ -280,10 +290,12 @@ function DetailModal({ resource, wings, onClose, onSaved, toast }) {
     try {
       await api.put(`/resources/${resource.id}`, {
         ...form,
-        business_wing_id: form.business_wing_id || null,
-        gross_salary: parseFloat(form.gross_salary) || 0,
-        tax_amount:   parseFloat(form.tax_amount)   || 0,
-        net_salary:   parseFloat(form.net_salary)   || 0,
+        business_wing_id:      form.business_wing_id      || null,
+        gross_salary:          parseFloat(form.gross_salary)          || 0,
+        tax_amount:            parseFloat(form.tax_amount)            || 0,
+        net_salary:            parseFloat(form.net_salary)            || 0,
+        last_review_date:      form.last_review_date      || null,
+        last_increment_amount: parseFloat(form.last_increment_amount) || 0,
       });
       toast('Saved', 'success');
       setEditing(false);
@@ -342,6 +354,8 @@ function DetailModal({ resource, wings, onClose, onSaved, toast }) {
                 <Field label="Gross Salary (PKR)" value={fmt(resource.gross_salary)} />
                 <Field label="Tax Amount (PKR)" value={fmt(resource.tax_amount)} />
                 <Field label="Net Salary (PKR)" value={fmt(resource.net_salary)} />
+                <Field label="Last Review Date" value={formatDate(resource.last_review_date)} />
+                <Field label="Last Increment (PKR)" value={fmt(resource.last_increment_amount)} />
               </div>
               <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '16px 0' }} />
               <InventoryPanel resourceId={resource.id} toast={toast} />

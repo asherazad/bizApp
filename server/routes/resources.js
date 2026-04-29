@@ -66,6 +66,7 @@ function buildInsertPayload(body) {
     account_number, bank_name, mode_of_transfer,
     job_type, employment_status, join_date,
     gross_salary, tax_amount, net_salary,
+    last_review_date, last_increment_amount,
   } = body;
 
   const gs = parseFloat(gross_salary) || 0;
@@ -86,11 +87,13 @@ function buildInsertPayload(body) {
     tax_amount:        parseFloat(tax_amount) || 0,
     net_salary:        parseFloat(net_salary) || 0,
     // original NOT NULL columns — provide safe defaults
-    resource_type:     'employee',
-    status:            es || 'active',
-    basic_salary:      gs,
-    annual_leaves:     0,
-    allowances:        {},
+    resource_type:          'employee',
+    status:                 es || 'active',
+    basic_salary:           gs,
+    annual_leaves:          0,
+    allowances:             {},
+    last_review_date:       last_review_date      || null,
+    last_increment_amount:  parseFloat(last_increment_amount) || 0,
   };
 }
 
@@ -242,6 +245,7 @@ router.put('/:id', async (req, res) => {
       'job_type', 'employment_status', 'status',
       'join_date', 'gross_salary', 'tax_amount', 'net_salary',
       'basic_salary', 'resource_type',
+      'last_review_date', 'last_increment_amount',
     ];
     const update = Object.fromEntries(
       allowed.filter(k => k in req.body).map(k => [k, req.body[k]])
