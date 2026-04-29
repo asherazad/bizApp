@@ -74,7 +74,8 @@ export default function Attendance() {
       toast(data.message, 'success');
       load();
     } catch (err) {
-      toast(err.response?.data?.detail || err.response?.data?.error || 'Import failed', 'error');
+      const raw = err.response?.data?.detail ?? err.response?.data?.error ?? err.message ?? 'Import failed';
+      toast(typeof raw === 'string' ? raw : JSON.stringify(raw), 'error');
     } finally {
       setImporting(false);
     }

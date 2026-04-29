@@ -9,7 +9,17 @@ router.use(authenticate);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ─── Parse a biometric Date/Time cell into a JS Date ─────────────────────────
-// Handles: JS Date objects, Excel serial numbers, and common string formats.
+// Handles multiple formats seen in biometric exports:
+//   • JS Date objects (cellDates:true)
+//   • Excel serial numbers
+//   • "DD-Mon-YY H:MM:SS AM/PM"  ← actual format from screenshot
+//   • "DD/MM/YYYY HH:MM[:SS]"
+//   • ISO / any format JS Date can parse natively
+const MONTH_IDX = {
+  jan:0,feb:1,mar:2,apr:3,may:4,jun:5,
+  jul:6,aug:7,sep:8,oct:9,nov:10,dec:11,
+};
+
 function parseBiometricDateTime(val) {
   if (!val && val !== 0) return null;
   if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
@@ -19,16 +29,31 @@ function parseBiometricDateTime(val) {
   }
   const s = String(val).trim();
   if (!s) return null;
-  // Direct ISO / common parse
-  let d = new Date(s);
-  if (!isNaN(d.getTime())) return d;
-  // DD/MM/YYYY HH:MM[:SS] — common in Pakistani biometric exports
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}:\d{2}(?::\d{2})?)$/);
-  if (m) {
-    d = new Date(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}T${m[4]}`);
+
+  // Format: "02-Apr-26 1:43:18 PM" (DD-Mon-YY H:MM:SS AM/PM)
+  const m1 = s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)$/i);
+  if (m1) {
+    const [, day, mon, yr, hr, min, sec, ampm] = m1;
+    const month = MONTH_IDX[mon.toLowerCase()];
+    if (month !== undefined) {
+      let hour = parseInt(hr, 10);
+      if (ampm.toUpperCase() === 'PM' && hour < 12) hour += 12;
+      if (ampm.toUpperCase() === 'AM' && hour === 12) hour = 0;
+      const d = new Date(2000 + parseInt(yr, 10), month, parseInt(day, 10), hour, parseInt(min, 10), parseInt(sec, 10));
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+
+  // Format: "DD/MM/YYYY HH:MM[:SS]"
+  const m2 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}:\d{2}(?::\d{2})?)$/);
+  if (m2) {
+    const d = new Date(`${m2[3]}-${m2[2].padStart(2,'0')}-${m2[1].padStart(2,'0')}T${m2[4]}`);
     if (!isNaN(d.getTime())) return d;
   }
-  return null;
+
+  // Fallback: native JS parse (handles ISO and many other formats)
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 // ─── POST /import — biometric Excel ──────────────────────────────────────────
