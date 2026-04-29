@@ -10,7 +10,12 @@ router.get('/', async (req, res) => {
     let q = db('purchase_orders')
       .leftJoin('clients', 'clients.id', 'purchase_orders.client_id')
       .leftJoin('business_wings', 'business_wings.id', 'purchase_orders.business_wing_id')
-      .select('purchase_orders.*', 'clients.name as client_name', 'business_wings.name as wing_name')
+      .select(
+        'purchase_orders.*',
+        'clients.name as client_name',
+        'business_wings.name as wing_name',
+        db.raw('COALESCE((SELECT SUM(total_amount) FROM invoices WHERE invoices.po_id = purchase_orders.id), 0) as invoiced_amount')
+      )
       .orderBy('purchase_orders.issue_date', 'desc');
     if (wing_id)   q = q.where('purchase_orders.business_wing_id', wing_id);
     if (client_id) q = q.where('purchase_orders.client_id', client_id);
