@@ -25,6 +25,7 @@ router.get('/preview', async (req, res) => {
       .leftJoin('business_wings as bw', 'bw.id', 'r.business_wing_id')
       .select('r.id', 'r.full_name', 'r.designation', 'r.employment_status',
               'r.account_number', 'r.bank_name', 'r.gross_salary', 'r.tax_amount',
+              'r.allowance_amount',
               'bw.id as wing_id', 'bw.name as wing_name')
       .whereNotNull('r.full_name')
       .whereNotIn(db.raw("LOWER(COALESCE(r.employment_status,''))"), ['resigned', 'terminated'])
@@ -54,10 +55,12 @@ router.get('/preview', async (req, res) => {
     const runMap  = Object.fromEntries(existing.map(r => [r.resource_id, r]));
 
     const preview = resources.map(r => {
-      const ex    = runMap[r.id];
-      const gross = parseFloat(r.gross_salary) || 0;
-      const tax   = parseFloat(r.tax_amount)   || 0;
-      const loan  = loanMap[r.id] || 0;
+      const ex        = runMap[r.id];
+      const gross     = parseFloat(r.gross_salary)    || 0;
+      const allowance = parseFloat(r.allowance_amount)|| 0;
+      const tax       = parseFloat(r.tax_amount)      || 0;
+      const loan      = loanMap[r.id] || 0;
+      const effectiveGross = gross + allowance;
       return {
         resource_id:       r.id,
         resource_name:     r.full_name,
@@ -66,13 +69,14 @@ router.get('/preview', async (req, res) => {
         account_number:    r.account_number,
         bank_name:         r.bank_name,
         wing_name:         r.wing_name,
-        gross_salary:      ex ? parseFloat(ex.gross_salary)      : gross,
+        allowance_amount:  allowance,
+        gross_salary:      ex ? parseFloat(ex.gross_salary)      : effectiveGross,
         tax_deduction:     ex ? parseFloat(ex.tax_deduction)     : tax,
         loan_deduction:    ex ? parseFloat(ex.loan_deduction)    : loan,
         advance_deduction: ex ? parseFloat(ex.advance_deduction) : 0,
         other_deductions:  ex ? parseFloat(ex.other_deductions)  : 0,
         overtime_amount:   ex ? parseFloat(ex.overtime_amount)   : 0,
-        net_salary:        ex ? parseFloat(ex.net_salary) : Math.max(0, gross - tax - loan),
+        net_salary:        ex ? parseFloat(ex.net_salary) : Math.max(0, effectiveGross - tax - loan),
         payroll_run_id:    ex?.id  || null,
         status:            ex?.status || null,
       };

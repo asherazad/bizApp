@@ -94,6 +94,7 @@ function buildInsertPayload(body) {
     allowances:             {},
     last_review_date:       last_review_date      || null,
     last_increment_amount:  parseFloat(last_increment_amount) || 0,
+    allowance_amount:       parseFloat(body.allowance_amount) || 0,
   };
 }
 
@@ -245,7 +246,7 @@ router.put('/:id', async (req, res) => {
       'job_type', 'employment_status', 'status',
       'join_date', 'gross_salary', 'tax_amount', 'net_salary',
       'basic_salary', 'resource_type',
-      'last_review_date', 'last_increment_amount',
+      'last_review_date', 'last_increment_amount', 'allowance_amount',
     ];
     const update = Object.fromEntries(
       allowed.filter(k => k in req.body).map(k => [k, req.body[k]])

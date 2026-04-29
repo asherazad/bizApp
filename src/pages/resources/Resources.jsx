@@ -23,7 +23,7 @@ const EMPTY_FORM = {
   full_name: '', designation: '', cnic: '', account_number: '',
   bank_name: '', mode_of_transfer: '', job_type: '', employment_status: '',
   join_date: '', gross_salary: '', tax_amount: '', net_salary: '',
-  business_wing_id: '', last_review_date: '', last_increment_amount: '',
+  business_wing_id: '', last_review_date: '', last_increment_amount: '', allowance_amount: '',
 };
 
 // ─── Shared resource form fields ──────────────────────────────────────────────
@@ -88,10 +88,14 @@ function ResourceFormFields({ form, onChange, wings }) {
         <input type="number" className="form-control" value={form.gross_salary} onChange={f('gross_salary')} />
       </div>
       <div className="form-group">
+        <label className="form-label">Allowance Amount (PKR)</label>
+        <input type="number" className="form-control" value={form.allowance_amount || ''} onChange={f('allowance_amount')} placeholder="Added to gross in payroll" />
+      </div>
+      <div className="form-group">
         <label className="form-label">Tax Amount (PKR)</label>
         <input type="number" className="form-control" value={form.tax_amount} onChange={f('tax_amount')} />
       </div>
-      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+      <div className="form-group">
         <label className="form-label">Net Salary (PKR)</label>
         <input type="number" className="form-control" value={form.net_salary} onChange={f('net_salary')} />
       </div>
@@ -122,6 +126,7 @@ function AddModal({ wings, onClose, onSaved, toast }) {
         ...form,
         business_wing_id:      form.business_wing_id      || null,
         gross_salary:          parseFloat(form.gross_salary)          || 0,
+        allowance_amount:      parseFloat(form.allowance_amount)      || 0,
         tax_amount:            parseFloat(form.tax_amount)            || 0,
         net_salary:            parseFloat(form.net_salary)            || 0,
         last_review_date:      form.last_review_date      || null,
@@ -292,6 +297,7 @@ function DetailModal({ resource, wings, onClose, onSaved, toast }) {
         ...form,
         business_wing_id:      form.business_wing_id      || null,
         gross_salary:          parseFloat(form.gross_salary)          || 0,
+        allowance_amount:      parseFloat(form.allowance_amount)      || 0,
         tax_amount:            parseFloat(form.tax_amount)            || 0,
         net_salary:            parseFloat(form.net_salary)            || 0,
         last_review_date:      form.last_review_date      || null,
@@ -352,6 +358,7 @@ function DetailModal({ resource, wings, onClose, onSaved, toast }) {
                 <Field label="Employment Status" value={resource.employment_status} />
                 <Field label="Join Date" value={formatDate(resource.join_date)} />
                 <Field label="Gross Salary (PKR)" value={fmt(resource.gross_salary)} />
+                <Field label="Allowance Amount (PKR)" value={fmt(resource.allowance_amount)} />
                 <Field label="Tax Amount (PKR)" value={fmt(resource.tax_amount)} />
                 <Field label="Net Salary (PKR)" value={fmt(resource.net_salary)} />
                 <Field label="Last Review Date" value={formatDate(resource.last_review_date)} />
