@@ -21,7 +21,25 @@ function POModal({ wings, onClose, onSaved }) {
   async function submit(e) {
     e.preventDefault(); setSaving(true);
     try {
-      await api.post('/purchase-orders', { ...form, items: items.map((it) => ({ ...it, quantity: parseFloat(it.quantity || 1), unit_price: parseFloat(it.unit_price || 0), amount: parseFloat(it.amount || 0) })) });
+      const mappedItems = items.map((it) => ({
+        ...it,
+        quantity: parseFloat(it.quantity || 1),
+        unit_price: parseFloat(it.unit_price || 0),
+        amount: parseFloat(it.amount || 0),
+      }));
+      const po_value = mappedItems.reduce((sum, it) => sum + it.amount, 0);
+      await api.post('/purchase-orders', {
+        wing_id: form.wing_id,
+        client_id: form.vendor_id || null,
+        po_number: form.po_number,
+        currency: form.currency_code,
+        exchange_rate: form.exchange_rate,
+        po_value,
+        issue_date: form.order_date,
+        expiry_date: form.expected_date || null,
+        notes: form.notes,
+        items: mappedItems,
+      });
       toast('PO created', 'success'); onSaved();
     } catch (err) { toast(err.response?.data?.error || 'Error', 'error'); }
     finally { setSaving(false); }
