@@ -5,6 +5,11 @@ import api from '../../lib/api';
 import { formatCurrency, formatDate, formatStatus, statusBadgeClass } from '../../lib/format';
 import { Plus, Pencil } from 'lucide-react';
 
+function toDateInput(val) {
+  if (!val) return '';
+  return String(val).slice(0, 10);
+}
+
 function POModal({ po, wings, onClose, onSaved }) {
   const toast = useToast();
   const isEdit = !!po;
@@ -16,8 +21,8 @@ function POModal({ po, wings, onClose, onSaved }) {
     po_number:   po?.po_number        || '',
     currency:    po?.currency         || 'PKR',
     exchange_rate: String(po?.exchange_rate ?? 1),
-    issue_date:  po?.issue_date       || new Date().toISOString().split('T')[0],
-    expiry_date: po?.expiry_date      || '',
+    issue_date:  toDateInput(po?.issue_date)  || new Date().toISOString().split('T')[0],
+    expiry_date: toDateInput(po?.expiry_date) || '',
     po_value:    String(po?.po_value  ?? ''),
     status:      po?.status           || 'active',
     notes:       po?.notes            || '',
