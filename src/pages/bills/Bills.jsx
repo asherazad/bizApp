@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { formatCurrency, formatDate, formatStatus, statusBadgeClass } from '../../lib/format';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 
 function defaultDueDate() {
   const now = new Date();
@@ -137,10 +137,22 @@ function PayBillModal({ bill, onClose, onDone }) {
 export default function Bills() {
   const { activeWing, wings } = useAuth();
   const toast = useToast();
-  const [bills,      setBills]      = useState([]);
-  const [modal,      setModal]      = useState(false);
-  const [payTarget,  setPayTarget]  = useState(null);
-  const [loading,    setLoading]    = useState(true);
+  const [bills,       setBills]       = useState([]);
+  const [modal,       setModal]       = useState(false);
+  const [payTarget,   setPayTarget]   = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [loading,     setLoading]     = useState(true);
+
+  async function deleteBill(id) {
+    try {
+      await api.delete(`/bills/${id}`);
+      toast('Bill deleted', 'success');
+      setDeleteTarget(null);
+      load();
+    } catch (err) {
+      toast(err.response?.data?.error || 'Error deleting bill', 'error');
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -172,15 +184,33 @@ export default function Bills() {
                     <td className="text-muted">{formatDate(b.due_date)}</td>
                     <td className="font-mono">{formatCurrency(b.amount)}</td>
                     <td><span className={`badge ${statusBadgeClass(b.status)}`}>{formatStatus(b.status)}</span></td>
-                    <td>{b.status !== 'paid' && <button className="btn btn-primary btn-sm" onClick={() => setPayTarget(b)}>Pay</button>}</td>
+                    <td style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      {b.status !== 'paid' && <button className="btn btn-primary btn-sm" onClick={() => setPayTarget(b)}>Pay</button>}
+                      {b.status !== 'paid' && <button className="btn btn-secondary btn-sm" style={{ color: 'var(--danger, #dc3545)' }} onClick={() => setDeleteTarget(b)} title="Delete"><Trash2 size={13} /></button>}
+                    </td>
                   </tr>
                 ))}
             </tbody>
           </table>
         </div>
       </div>
-      {modal     && <BillModal    wings={wings} onClose={() => setModal(false)}    onSaved={() => { setModal(false); load(); }} />}
-      {payTarget && <PayBillModal bill={payTarget} onClose={() => setPayTarget(null)} onDone={() => { setPayTarget(null); load(); }} />}
+      {modal        && <BillModal    wings={wings} onClose={() => setModal(false)}       onSaved={() => { setModal(false); load(); }} />}
+      {payTarget    && <PayBillModal bill={payTarget} onClose={() => setPayTarget(null)}   onDone={() => { setPayTarget(null); load(); }} />}
+      {deleteTarget && (
+        <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
+          <div className="modal" style={{ maxWidth: 380 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h3>Delete Bill</h3><button className="btn btn-secondary btn-sm" onClick={() => setDeleteTarget(null)}>✕</button></div>
+            <div className="modal-body">
+              <p>Delete <strong>{deleteTarget.bill_type}</strong> — {deleteTarget.description}?</p>
+              <p className="text-muted" style={{ fontSize: 13 }}>This cannot be undone.</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button className="btn btn-danger" onClick={() => deleteBill(deleteTarget.id)}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
