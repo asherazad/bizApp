@@ -38,11 +38,7 @@ export default function Sidebar() {
     <aside className="sidebar">
       {/* Logo */}
       <div className="sidebar-logo">
-        <svg width="26" height="26" viewBox="0 0 32 32" fill="none">
-          <rect width="32" height="32" rx="7" fill="var(--electric)"/>
-          <path d="M8 8h4l8 16h-4L8 8zm8 0h4l-8 16h-4l8-16z" fill="var(--lime)"/>
-        </svg>
-        <span className="sidebar-logo-text">Nex<span>us</span></span>
+        <img src="/horizontal-sync-logo.svg" alt="SYNC" />
       </div>
 
       {/* Nav */}
