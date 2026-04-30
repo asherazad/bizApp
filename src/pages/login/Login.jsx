@@ -36,13 +36,7 @@ export default function Login() {
 
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <svg width="52" height="52" viewBox="0 0 32 32" fill="none" style={{ marginBottom: 14 }}>
-            <rect width="32" height="32" rx="8" fill="var(--electric)"/>
-            <path d="M8 8h4l8 16h-4L8 8zm8 0h4l-8 16h-4l8-16z" fill="var(--lime)"/>
-          </svg>
-          <h1 style={{ fontFamily: 'var(--font-display)', color: 'var(--white)', fontSize: '1.75rem', letterSpacing: '-0.5px' }}>
-            Nex<span style={{ color: 'var(--lime)' }}>us</span>
-          </h1>
+          <img src="/sync-logo.svg" alt="SYNC" style={{ width: 160, marginBottom: 12 }} />
           <p style={{ color: 'var(--sidebar-text)', marginTop: 4, fontSize: 13 }}>
             Business Operations Platform
           </p>

@@ -155,24 +155,47 @@ function TransferModal({ fromAccount, onClose, onSaved }) {
 }
 
 function TxnModal({ account, onClose, onSaved }) {
+  const { wings } = useAuth();
   const toast = useToast();
   const [form, setForm] = useState({
-    txn_type:    'Credit',
-    txn_date:    new Date().toISOString().split('T')[0],
-    amount:      '',
-    currency:    account?.currency || 'PKR',
-    description: '',
-    category:    '',
+    txn_type:           'Credit',
+    txn_date:           new Date().toISOString().split('T')[0],
+    amount:             '',
+    currency:           account?.currency || 'PKR',
+    description:        '',
+    category:           '',
+    wing_id:            account?.business_wing_id || '',
+    linked_resource_id: '',
   });
-  const [saving, setSaving] = useState(false);
+  const [resources, setResources]     = useState([]);
+  const [resourceSearch, setResourceSearch] = useState('');
+  const [saving, setSaving]           = useState(false);
+
+  useEffect(() => {
+    api.get('/resources', { params: { employment_status: 'active' } })
+      .then(r => setResources(r.data))
+      .catch(() => {});
+  }, []);
+
   function f(k) { return (e) => setForm((p) => ({ ...p, [k]: e.target.value })); }
+
+  const filteredResources = resourceSearch.trim()
+    ? resources.filter(r => r.full_name?.toLowerCase().includes(resourceSearch.toLowerCase()))
+    : resources;
+
   async function submit(e) {
     e.preventDefault(); setSaving(true);
     try {
       await api.post('/banks/transactions', {
-        ...form,
-        bank_account_id: account.id,
-        wing_id: account.business_wing_id || null,
+        bank_account_id:    account.id,
+        txn_type:           form.txn_type,
+        txn_date:           form.txn_date,
+        amount:             form.amount,
+        currency:           form.currency,
+        description:        form.description,
+        reference_type:     form.category || null,
+        wing_id:            form.wing_id || account.business_wing_id || null,
+        linked_resource_id: form.linked_resource_id || null,
       });
       toast('Transaction recorded', 'success');
       onSaved();
@@ -180,6 +203,7 @@ function TxnModal({ account, onClose, onSaved }) {
     catch (err) { toast(err.response?.data?.error || 'Error', 'error'); }
     finally { setSaving(false); }
   }
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -217,6 +241,39 @@ function TxnModal({ account, onClose, onSaved }) {
             </div>
             <div className="form-group"><label className="form-label">Category</label>
               <input className="form-control" placeholder="e.g. Client Payment, Utility, Salary" value={form.category} onChange={f('category')} />
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>Link Transaction To</div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Business Wing</label>
+                <select className="form-control" value={form.wing_id} onChange={f('wing_id')}>
+                  <option value="">— None —</option>
+                  {wings.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Resource (Employee / Contractor)</label>
+                <input
+                  className="form-control"
+                  placeholder="Search name…"
+                  value={resourceSearch}
+                  onChange={e => { setResourceSearch(e.target.value); setForm(p => ({ ...p, linked_resource_id: '' })); }}
+                  style={{ marginBottom: 4 }}
+                />
+                {resourceSearch.trim() && (
+                  <select className="form-control" size={Math.min(filteredResources.length + 1, 5)} value={form.linked_resource_id}
+                    onChange={e => { setForm(p => ({ ...p, linked_resource_id: e.target.value })); setResourceSearch(resources.find(r => r.id === e.target.value)?.full_name || resourceSearch); }}>
+                    <option value="">— None —</option>
+                    {filteredResources.map(r => <option key={r.id} value={r.id}>{r.full_name}{r.designation ? ` (${r.designation})` : ''}</option>)}
+                  </select>
+                )}
+                {form.linked_resource_id && (
+                  <div style={{ fontSize: 12, color: 'var(--success)', marginTop: 4 }}>
+                    ✓ Linked: {resources.find(r => r.id === form.linked_resource_id)?.full_name}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <div className="modal-footer">
@@ -347,16 +404,18 @@ export default function Banks() {
           <div className="table-wrap">
             <table className="table">
               <thead>
-                <tr><th>Date</th><th>Description</th><th>Category</th><th>Type</th><th className="text-right">Amount</th><th className="text-right">Balance</th><th style={{ width: 80 }}></th></tr>
+                <tr><th>Date</th><th>Description</th><th>Category</th><th>Wing</th><th>Resource</th><th>Type</th><th className="text-right">Amount</th><th className="text-right">Balance</th><th style={{ width: 80 }}></th></tr>
               </thead>
               <tbody>
                 {transactions.length === 0
-                  ? <tr><td colSpan={7} className="text-muted" style={{ textAlign: 'center', padding: 24 }}>No transactions</td></tr>
+                  ? <tr><td colSpan={9} className="text-muted" style={{ textAlign: 'center', padding: 24 }}>No transactions</td></tr>
                   : transactions.map((t) => (
                     <tr key={t.id}>
                       <td className="text-muted">{formatDate(t.txn_date)}</td>
                       <td>{t.description}</td>
                       <td className="text-muted">{t.reference_type || '—'}</td>
+                      <td className="text-muted" style={{ fontSize: 12 }}>{t.wing_name || '—'}</td>
+                      <td className="text-muted" style={{ fontSize: 12 }}>{t.linked_resource_name || '—'}</td>
                       <td>
                         {t.txn_type === 'Credit'
                           ? <span className="badge badge-success"><ArrowDownLeft size={11} /> Credit</span>

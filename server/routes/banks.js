@@ -86,8 +86,16 @@ router.get('/transactions', async (req, res) => {
     const { wing_id, bank_account_id, from, to, txn_type, limit = 100, offset = 0 } = req.query;
     let q = db('bank_transactions')
       .join('bank_accounts', 'bank_accounts.id', 'bank_transactions.bank_account_id')
-      .select('bank_transactions.*', 'bank_accounts.bank_name', 'bank_accounts.account_number_last4')
-      .orderBy('bank_transactions.txn_date', 'desc')
+      .leftJoin('business_wings', 'business_wings.id', 'bank_transactions.business_wing_id')
+      .leftJoin('resources', 'resources.id', 'bank_transactions.linked_resource_id')
+      .select(
+        'bank_transactions.*',
+        'bank_accounts.bank_name',
+        'bank_accounts.account_number_last4',
+        'business_wings.name as wing_name',
+        'resources.full_name as linked_resource_name',
+      )
+      .orderBy('bank_transactions.id', 'asc')
       .limit(parseInt(limit)).offset(parseInt(offset));
     if (wing_id)         q = q.where('bank_transactions.business_wing_id', wing_id);
     if (bank_account_id) q = q.where('bank_transactions.bank_account_id', bank_account_id);
@@ -103,7 +111,7 @@ router.get('/transactions', async (req, res) => {
 
 router.post('/transactions', async (req, res) => {
   try {
-    const { bank_account_id, wing_id, txn_type, amount, currency, description, reference_type, txn_date } = req.body;
+    const { bank_account_id, wing_id, txn_type, amount, currency, description, reference_type, txn_date, linked_resource_id } = req.body;
     if (!bank_account_id || !txn_type || !amount || !description || !txn_date) {
       return res.status(400).json({ error: 'Required fields missing' });
     }
@@ -124,6 +132,7 @@ router.post('/transactions', async (req, res) => {
         currency: currency || account.currency || 'PKR',
         description, reference_type, txn_date,
         running_balance: newBalance,
+        linked_resource_id: linked_resource_id || null,
       }).returning('*');
       await trx('bank_accounts').where({ id: bank_account_id })
         .update({ current_balance: newBalance });
