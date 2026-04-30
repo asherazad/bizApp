@@ -38,7 +38,7 @@ export default function Sidebar() {
     <aside className="sidebar">
       {/* Logo */}
       <div className="sidebar-logo">
-        <img src="/horizontal-sync-logo.svg" alt="SYNC" />
+        <img src="/horizontal-sync-logo.svg" alt="SYNC" height="32px"/>
       </div>
 
       {/* Nav */}

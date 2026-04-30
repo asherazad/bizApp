@@ -35,9 +35,8 @@ export default function Login() {
       <div style={{ width: '100%', maxWidth: 400, padding: '0 20px' }}>
 
         {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <img src="/sync-logo.svg" alt="SYNC" style={{ width: 180 }} />
-          
+        <div style={{ textAlign: 'center'}}>
+          <img src="/sync-logo.svg" alt="SYNC" style={{ width: 225 }} />
         </div>
 
         {/* Card */}
