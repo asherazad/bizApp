@@ -15,15 +15,15 @@
   --ink-navy:       #1A1C30;
   --ink-indigo:     #22254A;
 
-  /* ── ACCENT — ELECTRIC VIOLET ── */
-  --electric:        #5B4FFF;
-  --electric-light:  #EAE8FF;
-  --electric-dark:   #3D32D9;
-  --electric-glow:   rgba(91, 79, 255, 0.15);
-  --electric-focus:  rgba(91, 79, 255, 0.10);
-  --electric-border: rgba(91, 79, 255, 0.20);
-  --electric-ring:   rgba(91, 79, 255, 0.25);
-  --electric-hover:  rgba(91, 79, 255, 0.35);
+  /* ── ACCENT — ELECTRIC ORANGE ── */
+  --electric:        #ef5f28;
+  --electric-light:  #fde8de;
+  --electric-dark:   #c44a1a;
+  --electric-glow:   rgba(239, 95, 40, 0.15);
+  --electric-focus:  rgba(239, 95, 40, 0.10);
+  --electric-border: rgba(239, 95, 40, 0.20);
+  --electric-ring:   rgba(239, 95, 40, 0.25);
+  --electric-hover:  rgba(239, 95, 40, 0.35);
 
   /* ── ACCENT 2 — LIME ── */
   --lime:           #B8FF3C;
@@ -108,7 +108,7 @@
   /* old --navy → electric purple */
   --navy:         var(--electric);
   --navy-dark:    var(--electric-dark);
-  --navy-light:   #6D64FF;
+  --navy-light:   #f27346;
 
   /* old amber accent → lime */
   --amber:        var(--lime);
