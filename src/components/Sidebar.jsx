@@ -14,6 +14,7 @@ const NAV = [
   { to: '/purchase-orders', icon: ShoppingCart,     label: 'Purchase Orders' },
   { to: '/banks',           icon: Landmark,         label: 'Bank Accounts' },
   { to: '/bills',           icon: CreditCard,       label: 'Bills' },
+  { to: '/creditcard',      icon: Wallet,           label: 'Credit Card' },
   { to: '/tax',             icon: Receipt,          label: 'Tax & Challans' },
   { section: 'HR' },
   { to: '/resources',       icon: UserCheck,        label: 'Resources' },

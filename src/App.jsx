@@ -18,6 +18,7 @@ import Travel from './pages/travel/Travel';
 import Subscriptions from './pages/subscriptions/Subscriptions';
 import Reminders from './pages/reminders/Reminders';
 import Users from './pages/users/Users';
+import CreditCard from './pages/creditcard/CreditCard';
 
 export default function App() {
   return (
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="/payroll"          element={<Payroll />} />
           <Route path="/loans"            element={<Loans />} />
           <Route path="/bills"            element={<Bills />} />
+          <Route path="/creditcard"       element={<CreditCard />} />
           <Route path="/travel"           element={<Travel />} />
           <Route path="/subscriptions"    element={<Subscriptions />} />
           <Route path="/reminders"        element={<Reminders />} />
