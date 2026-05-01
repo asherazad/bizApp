@@ -117,7 +117,7 @@ function TaxModal({ challan, wings, onClose, onSaved }) {
             <div className="grid-2">
               <div className="form-group">
                 <label className="form-label">Tax Amount (PKR) *</label>
-                <input type="number" step="0.01" className="form-control" required value={form.tax_amount} onChange={f('tax_amount')} />
+                <input type="number" step="0.01" className="form-control" required value={form.amount} onChange={f('amount')} />
               </div>
               <div className="form-group">
                 <label className="form-label">Penalty</label>
@@ -149,7 +149,7 @@ function TaxModal({ challan, wings, onClose, onSaved }) {
                 </div>
                 {payingNow && (
                   <div style={{ background: 'var(--warning-light)', border: '1px solid var(--warning-border)', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>
-                    Marking as paid will debit <strong>{formatCurrency((parseFloat(form.tax_amount) || 0) + (parseFloat(form.penalty) || 0))}</strong> from the selected bank account.
+                    Marking as paid will debit <strong>{formatCurrency((parseFloat(form.amount) || 0) + (parseFloat(form.penalty) || 0))}</strong> from the selected bank account.
                   </div>
                 )}
               </div>
