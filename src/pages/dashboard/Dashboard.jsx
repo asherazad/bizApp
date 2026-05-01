@@ -142,11 +142,11 @@ export default function Dashboard() {
                   <td style={{ fontWeight: 500 }}>{t.bank_name}</td>
                   <td>{t.description}</td>
                   <td>
-                    <span className={`badge ${t.type === 'credit' ? 'badge-success' : 'badge-danger'}`}>
+                    <span className={`badge ${t.txn_type === 'Credit' ? 'badge-success' : 'badge-danger'}`}>
                       {t.type}
                     </span>
                   </td>
-                  <td className="font-mono" style={{ textAlign: 'right' }}>{formatCurrency(t.pkr_amount)}</td>
+                  <td className="font-mono" style={{ textAlign: 'right' }}>{formatCurrency(t.amount)}</td>
                 </tr>
               )) : (
                 <tr><td colSpan={5} className="text-muted" style={{ textAlign: 'center', padding: 24 }}>No transactions yet</td></tr>
