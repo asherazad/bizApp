@@ -24,7 +24,20 @@ router.get('/', async (req, res) => {
       .leftJoin('business_wings', 'business_wings.id', 'tax_challans.business_wing_id')
       .leftJoin('bank_accounts',  'bank_accounts.id',  'tax_challans.bank_account_id')
       .select(
-        'tax_challans.*',
+        'tax_challans.id',
+        'tax_challans.business_wing_id',
+        'tax_challans.challan_number',
+        'tax_challans.challan_type',
+        'tax_challans.period',
+        'tax_challans.amount_due',
+        'tax_challans.taxable_amount',
+        'tax_challans.penalty',
+        'tax_challans.status',
+        'tax_challans.due_date',
+        'tax_challans.paid_date',
+        'tax_challans.bank_account_id',
+        'tax_challans.notes',
+        'tax_challans.created_at',
         'business_wings.name as wing_name',
         'bank_accounts.bank_name',
         'bank_accounts.account_title',
@@ -34,7 +47,6 @@ router.get('/', async (req, res) => {
     if (tax_type) q = q.where('tax_challans.challan_type', tax_type);
     if (status)   q = q.where('tax_challans.status', status);
 
-    // Attach split period dates for the frontend
     const rows = await q;
     res.json(rows.map(r => ({ ...r, ...splitPeriod(r.period) })));
   } catch (err) {
