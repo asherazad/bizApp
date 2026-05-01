@@ -138,12 +138,12 @@ export default function Dashboard() {
             <tbody>
               {recent_transactions?.length ? recent_transactions.map((t) => (
                 <tr key={t.id}>
-                  <td className="text-muted">{formatDate(t.transaction_date)}</td>
+                  <td className="text-muted">{formatDate(t.txn_date)}</td>
                   <td style={{ fontWeight: 500 }}>{t.bank_name}</td>
                   <td>{t.description}</td>
                   <td>
                     <span className={`badge ${t.txn_type === 'Credit' ? 'badge-success' : 'badge-danger'}`}>
-                      {t.type}
+                      {t.txn_type}
                     </span>
                   </td>
                   <td className="font-mono" style={{ textAlign: 'right' }}>{formatCurrency(t.amount)}</td>
