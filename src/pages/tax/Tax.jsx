@@ -127,8 +127,8 @@ function TaxModal({ challan, wings, onClose, onSaved }) {
 
             {/* Due Date */}
             <div className="form-group">
-              <label className="form-label">Due Date</label>
-              <input type="date" className="form-control" value={form.due_date} onChange={f('due_date')} />
+              <label className="form-label">Due Date *</label>
+              <input type="date" className="form-control" required value={form.due_date} onChange={f('due_date')} />
             </div>
 
             {/* Payment section — edit only */}

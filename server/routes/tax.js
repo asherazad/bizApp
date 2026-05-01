@@ -76,8 +76,8 @@ router.post('/', async (req, res) => {
       due_date, notes, bank_account_id,
     } = req.body;
 
-    if (!wing_id || !tax_type || !period_start || !period_end || !tax_amount) {
-      return res.status(400).json({ error: 'wing_id, tax_type, period_start, period_end, tax_amount are required' });
+    if (!wing_id || !tax_type || !period_start || !period_end || !tax_amount || !due_date) {
+      return res.status(400).json({ error: 'wing_id, tax_type, period_start, period_end, tax_amount, due_date are required' });
     }
 
     const [challan] = await db('tax_challans').insert({
