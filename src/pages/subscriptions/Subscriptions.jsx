@@ -6,11 +6,9 @@ import { formatCurrency, formatDate, formatStatus, statusBadgeClass } from '../.
 import { Plus, Pencil, Trash2, CreditCard, Pause, Play } from 'lucide-react';
 
 const CYCLES = [
-  { value: 'monthly',    label: 'Monthly' },
-  { value: 'quarterly',  label: 'Quarterly' },
-  { value: 'semi_annual',label: 'Semi-Annual' },
-  { value: 'yearly',     label: 'Yearly' },
-  { value: 'once',       label: 'One-time' },
+  { value: 'Monthly',   label: 'Monthly' },
+  { value: 'Quarterly', label: 'Quarterly' },
+  { value: 'Annual',    label: 'Annual' },
 ];
 
 function cycleLabel(c) { return CYCLES.find(x => x.value === c)?.label || formatStatus(c || ''); }
@@ -29,7 +27,7 @@ function SubModal({ sub, wings, onClose, onSaved }) {
     service_name:      sub?.service_name      || '',
     amount:            sub?.amount            || '',
     currency_code:     sub?.currency_code     || 'PKR',
-    billing_cycle:     sub?.billing_cycle     || 'monthly',
+    billing_cycle:     sub?.billing_cycle     || 'Monthly',
     next_renewal_date: sub?.next_renewal_date?.split('T')[0] || '',
     vendor_url:        sub?.vendor_url        || '',
     notes:             sub?.notes             || '',
@@ -365,10 +363,8 @@ export default function Subscriptions() {
   const activeSubs = subs.filter(s => s.status === 'active');
   const totalMonthly = activeSubs.reduce((acc, s) => {
     const amt = parseFloat(s.amount) || 0;
-    if (s.billing_cycle === 'yearly' || s.billing_cycle === 'annual') return acc + amt / 12;
-    if (s.billing_cycle === 'quarterly') return acc + amt / 3;
-    if (s.billing_cycle === 'semi_annual') return acc + amt / 6;
-    if (s.billing_cycle === 'once') return acc;
+    if (s.billing_cycle === 'Annual')    return acc + amt / 12;
+    if (s.billing_cycle === 'Quarterly') return acc + amt / 3;
     return acc + amt;
   }, 0);
   const upcoming = subs.filter(s => s.status === 'active' && isDue(s.next_renewal_date));

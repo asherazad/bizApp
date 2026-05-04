@@ -8,12 +8,10 @@ router.use(authenticate);
 function advanceDueDate(dateStr, cycle) {
   const d = new Date(dateStr);
   switch (cycle) {
-    case 'monthly':    d.setMonth(d.getMonth() + 1);  break;
-    case 'quarterly':  d.setMonth(d.getMonth() + 3);  break;
-    case 'semi_annual':d.setMonth(d.getMonth() + 6);  break;
-    case 'yearly':
-    case 'annual':     d.setFullYear(d.getFullYear() + 1); break;
-    default: return null; // 'once' — no next date
+    case 'Monthly':   d.setMonth(d.getMonth() + 1);        break;
+    case 'Quarterly': d.setMonth(d.getMonth() + 3);        break;
+    case 'Annual':    d.setFullYear(d.getFullYear() + 1);  break;
+    default: return null;
   }
   return d.toISOString().split('T')[0];
 }
@@ -105,7 +103,7 @@ router.post('/', async (req, res) => {
       currency_code:    currency_code    || 'PKR',
       exchange_rate:    1,
       pkr_amount:       parseFloat(amount),
-      billing_cycle:    billing_cycle    || 'monthly',
+      billing_cycle:    billing_cycle    || 'Monthly',
       next_renewal_date,
       status:           'active',
       notes:            notes            || null,
