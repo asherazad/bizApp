@@ -25,12 +25,12 @@ function SubModal({ sub, wings, onClose, onSaved }) {
   const toast  = useToast();
   const isEdit = !!sub?.id;
   const [form, setForm] = useState({
-    wing_id:           sub?.wing_id           || '',
+    business_wing_id:  sub?.business_wing_id  || '',
     service_name:      sub?.service_name      || '',
     amount:            sub?.amount            || '',
     currency_code:     sub?.currency_code     || 'PKR',
     billing_cycle:     sub?.billing_cycle     || 'monthly',
-    next_billing_date: sub?.next_billing_date?.split('T')[0] || '',
+    next_renewal_date: sub?.next_renewal_date?.split('T')[0] || '',
     vendor_url:        sub?.vendor_url        || '',
     notes:             sub?.notes             || '',
     status:            sub?.status            || 'active',
@@ -63,7 +63,7 @@ function SubModal({ sub, wings, onClose, onSaved }) {
             <div className="grid-2">
               <div className="form-group">
                 <label className="form-label">Business Wing *</label>
-                <select className="form-control" required value={form.wing_id} onChange={f('wing_id')}>
+                <select className="form-control" required value={form.business_wing_id} onChange={f('business_wing_id')}>
                   <option value="">Select wing…</option>
                   {wings.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                 </select>
@@ -96,7 +96,7 @@ function SubModal({ sub, wings, onClose, onSaved }) {
               </div>
               <div className="form-group">
                 <label className="form-label">Next Due Date *</label>
-                <input type="date" className="form-control" required value={form.next_billing_date} onChange={f('next_billing_date')} />
+                <input type="date" className="form-control" required value={form.next_renewal_date} onChange={f('next_renewal_date')} />
               </div>
             </div>
 
@@ -371,7 +371,7 @@ export default function Subscriptions() {
     if (s.billing_cycle === 'once') return acc;
     return acc + amt;
   }, 0);
-  const upcoming = subs.filter(s => s.status === 'active' && isDue(s.next_billing_date));
+  const upcoming = subs.filter(s => s.status === 'active' && isDue(s.next_renewal_date));
 
   return (
     <div>
@@ -433,7 +433,7 @@ export default function Subscriptions() {
                 : subs.length === 0
                   ? <tr><td colSpan={8} className="text-muted" style={{ textAlign: 'center', padding: 24 }}>No subscriptions</td></tr>
                   : subs.map(s => {
-                    const due = isDue(s.next_billing_date) && s.status === 'active';
+                    const due = isDue(s.next_renewal_date) && s.status === 'active';
                     return (
                       <tr key={s.id}>
                         <td>
@@ -444,7 +444,7 @@ export default function Subscriptions() {
                         <td className="text-muted">{cycleLabel(s.billing_cycle)}</td>
                         <td className="text-right font-mono" style={{ fontWeight: 600 }}>{formatCurrency(s.amount, s.currency_code)}</td>
                         <td style={{ color: due ? 'var(--danger)' : undefined, fontWeight: due ? 600 : undefined }}>
-                          {formatDate(s.next_billing_date)}
+                          {formatDate(s.next_renewal_date)}
                           {due && <span style={{ fontSize: 10, marginLeft: 4, background: 'var(--danger)', color: '#fff', borderRadius: 4, padding: '1px 5px' }}>DUE</span>}
                         </td>
                         <td className="text-muted" style={{ fontSize: 12 }}>
