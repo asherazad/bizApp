@@ -16,7 +16,6 @@ function TxnModal({ txn, wings, onClose, onSaved }) {
   const [form, setForm] = useState({
     txn_date:    txn?.txn_date?.split('T')[0]  || new Date().toISOString().split('T')[0],
     merchant:    txn?.merchant    || '',
-    description: txn?.description || '',
     amount:      txn?.amount      || '',
     currency:    txn?.currency    || 'PKR',
     category:    txn?.category    || '',
@@ -105,8 +104,8 @@ function TxnModal({ txn, wings, onClose, onSaved }) {
 
             {/* Description */}
             <div className="form-group">
-              <label className="form-label">Description</label>
-              <input className="form-control" placeholder="Brief description" value={form.description} onChange={f('description')} />
+              <label className="form-label">Notes</label>
+              <input className="form-control" placeholder="Brief Notes" value={form.notes} onChange={f('notes')} />
             </div>
 
             {/* Notes */}
@@ -283,7 +282,7 @@ export default function CreditCard() {
                 <th>Merchant</th>
                 <th>Category</th>
                 <th>Wing</th>
-                <th>Description</th>
+                <th>Notes</th>
                 <th className="text-right">Amount</th>
                 <th>Status</th>
                 <th>Invoice</th>
@@ -302,7 +301,7 @@ export default function CreditCard() {
                       <td className="text-muted">{t.category ? formatStatus(t.category) : '—'}</td>
                       <td className="text-muted" style={{ fontSize: 12 }}>{t.wing_name || <span style={{ color: 'var(--warning)' }}>Unassigned</span>}</td>
                       <td className="text-muted" style={{ fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {t.description || '—'}
+                        {t.notes || '—'}
                       </td>
                       <td className="text-right font-mono" style={{ fontWeight: 600 }}>{formatCurrency(t.amount, t.currency)}</td>
                       <td>
