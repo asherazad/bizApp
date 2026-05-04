@@ -35,7 +35,6 @@ router.get('/', async (req, res) => {
         'subscriptions.id',
         'subscriptions.wing_id',
         'subscriptions.service_name',
-        'subscriptions.description',
         'subscriptions.amount',
         'subscriptions.currency_code',
         'subscriptions.billing_cycle',
@@ -90,7 +89,7 @@ router.get('/cc-balance', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const {
-      wing_id, service_name, description, amount, currency_code,
+      wing_id, service_name, amount, currency_code,
       billing_cycle, next_billing_date, notes, vendor_url,
     } = req.body;
 
@@ -103,7 +102,6 @@ router.post('/', async (req, res) => {
     const [sub] = await db('subscriptions').insert({
       wing_id,
       service_name,
-      description:    description    || null,
       amount:         parseFloat(amount),
       currency_code:  currency_code  || 'PKR',
       exchange_rate:  1,
@@ -130,14 +128,13 @@ router.put('/:id', async (req, res) => {
     if (!sub) return res.status(404).json({ error: 'Not found' });
 
     const {
-      wing_id, service_name, description, amount, currency_code,
+      wing_id, service_name, amount, currency_code,
       billing_cycle, next_billing_date, status, notes, vendor_url,
     } = req.body;
 
     const update = {};
     if (wing_id           !== undefined) update.wing_id           = wing_id;
     if (service_name      !== undefined) update.service_name      = service_name;
-    if (description       !== undefined) update.description       = description || null;
     if (amount            !== undefined) { update.amount = parseFloat(amount); update.pkr_amount = parseFloat(amount); }
     if (currency_code     !== undefined) update.currency_code     = currency_code;
     if (billing_cycle     !== undefined) update.billing_cycle     = billing_cycle;

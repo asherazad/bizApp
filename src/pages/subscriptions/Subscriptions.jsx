@@ -27,7 +27,6 @@ function SubModal({ sub, wings, onClose, onSaved }) {
   const [form, setForm] = useState({
     wing_id:           sub?.wing_id           || '',
     service_name:      sub?.service_name      || '',
-    description:       sub?.description       || '',
     amount:            sub?.amount            || '',
     currency_code:     sub?.currency_code     || 'PKR',
     billing_cycle:     sub?.billing_cycle     || 'monthly',
