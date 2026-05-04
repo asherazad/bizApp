@@ -21,6 +21,74 @@ async function uploadInvoice(file) {
   return { url: data.publicUrl, filename: file.originalname };
 }
 
+// ─── GET /balance ─────────────────────────────────────────────────────────────
+router.get('/balance', async (req, res) => {
+  try {
+    const cc = await db('credit_cards').first();
+    if (!cc) return res.status(404).json({ error: 'Credit card not set up. Run supabase_subscriptions_v1.sql.' });
+    res.json(cc);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error', detail: err.message });
+  }
+});
+
+// ─── POST /recharge — load funds from bank account onto CC ────────────────────
+router.post('/recharge', async (req, res) => {
+  try {
+    const { bank_account_id, amount, recharge_date, notes } = req.body;
+    if (!bank_account_id || !amount) {
+      return res.status(400).json({ error: 'bank_account_id and amount are required' });
+    }
+
+    const funds = parseFloat(amount);
+    const date  = recharge_date || new Date().toISOString().split('T')[0];
+
+    await db.transaction(async (trx) => {
+      const cc      = await trx('credit_cards').first();
+      const account = await trx('bank_accounts').where({ id: bank_account_id }).first();
+      if (!cc)      throw new Error('Credit card record not found');
+      if (!account) throw new Error('Bank account not found');
+      if (parseFloat(account.current_balance) < funds) throw new Error('Insufficient bank account balance');
+
+      const newBankBalance = parseFloat(account.current_balance) - funds;
+      const newCCBalance   = parseFloat(cc.current_balance) + funds;
+
+      // Debit bank account
+      await trx('bank_transactions').insert({
+        bank_account_id,
+        business_wing_id: account.wing_id || null,
+        txn_type:         'Debit',
+        amount:           funds,
+        currency:         account.currency || account.currency_code || 'PKR',
+        description:      `CC Recharge — ${notes || cc.name}`,
+        reference_type:   'cc_recharge',
+        txn_date:         date,
+        running_balance:  newBankBalance,
+      });
+      await trx('bank_accounts').where({ id: bank_account_id }).update({ current_balance: newBankBalance });
+
+      // Credit CC
+      await trx('credit_card_txns').insert({
+        credit_card_id:  cc.id,
+        txn_date:        date,
+        merchant:        'Bank Transfer',
+        description:     notes || `Recharge from ${account.bank_name || 'bank'}`,
+        amount:          funds,
+        currency:        cc.currency,
+        category:        'recharge',
+        txn_type:        'credit',
+        status:          'reconciled',
+      });
+      await trx('credit_cards').where({ id: cc.id }).update({ current_balance: newCCBalance });
+    });
+
+    const cc = await db('credit_cards').first();
+    res.json(cc);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
 // ─── GET / ───────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
@@ -40,6 +108,8 @@ router.get('/', async (req, res) => {
         'credit_card_txns.invoice_url',
         'credit_card_txns.invoice_filename',
         'credit_card_txns.status',
+        'credit_card_txns.txn_type',
+        'credit_card_txns.reference_type',
         'credit_card_txns.created_at',
         'business_wings.name as wing_name',
       )

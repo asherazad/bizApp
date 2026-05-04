@@ -162,6 +162,7 @@ export default function CreditCard() {
   const toast = useToast();
 
   const [txns, setTxns]               = useState([]);
+  const [ccBalance, setCCBalance]     = useState(null);
   const [loading, setLoading]         = useState(true);
   const [modal, setModal]             = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -177,7 +178,14 @@ export default function CreditCard() {
     if (filterWing)   params.wing_id = filterWing;
     if (filterStatus) params.status  = filterStatus;
     if (filterMonth)  params.month   = filterMonth;
-    try { setTxns((await api.get('/creditcard', { params })).data); }
+    try {
+      const [txnsRes, balRes] = await Promise.all([
+        api.get('/creditcard', { params }),
+        api.get('/creditcard/balance').catch(() => ({ data: null })),
+      ]);
+      setTxns(txnsRes.data);
+      setCCBalance(balRes.data);
+    }
     catch { toast('Failed to load transactions', 'error'); }
     finally { setLoading(false); }
   }
@@ -195,9 +203,11 @@ export default function CreditCard() {
   }
 
   // summary stats
-  const total     = txns.reduce((s, t) => s + parseFloat(t.amount || 0), 0);
-  const pending   = txns.filter(t => t.status === 'pending').reduce((s, t) => s + parseFloat(t.amount || 0), 0);
-  const byWing    = txns.reduce((acc, t) => {
+  const debits  = txns.filter(t => (t.txn_type || 'debit') === 'debit');
+  const credits = txns.filter(t => t.txn_type === 'credit');
+  const total   = debits.reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+  const pending = txns.filter(t => t.status === 'pending').reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+  const byWing  = debits.reduce((acc, t) => {
     const key = t.wing_name || 'Unassigned';
     acc[key] = (acc[key] || 0) + parseFloat(t.amount || 0);
     return acc;
@@ -212,10 +222,19 @@ export default function CreditCard() {
 
       {/* Summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
+        {ccBalance && (
+          <div className="card" style={{ padding: '16px 20px', border: '1px solid var(--electric-border)' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: 'var(--electric)', letterSpacing: '0.5px', marginBottom: 6 }}>CC Balance</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: parseFloat(ccBalance.current_balance) < 5000 ? 'var(--danger)' : 'inherit' }}>
+              {formatCurrency(ccBalance.current_balance, ccBalance.currency)}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{ccBalance.name}</div>
+          </div>
+        )}
         <div className="card" style={{ padding: '16px 20px' }}>
           <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px', marginBottom: 6 }}>Total Spend</div>
           <div style={{ fontSize: 22, fontWeight: 700 }}>{formatCurrency(total)}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{txns.length} transaction{txns.length !== 1 ? 's' : ''}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{debits.length} debit transaction{debits.length !== 1 ? 's' : ''}</div>
         </div>
         <div className="card" style={{ padding: '16px 20px' }}>
           <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px', marginBottom: 6 }}>Pending</div>

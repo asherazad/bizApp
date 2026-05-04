@@ -1,73 +1,219 @@
 const router = require('express').Router();
-const db = require('../db');
+const db     = require('../db');
 const { authenticate } = require('../middleware/auth');
 
 router.use(authenticate);
 
+// ─── helpers ─────────────────────────────────────────────────────────────────
+function advanceDueDate(dateStr, cycle) {
+  const d = new Date(dateStr);
+  switch (cycle) {
+    case 'monthly':    d.setMonth(d.getMonth() + 1);  break;
+    case 'quarterly':  d.setMonth(d.getMonth() + 3);  break;
+    case 'semi_annual':d.setMonth(d.getMonth() + 6);  break;
+    case 'yearly':
+    case 'annual':     d.setFullYear(d.getFullYear() + 1); break;
+    default: return null; // 'once' — no next date
+  }
+  return d.toISOString().split('T')[0];
+}
+
+async function getCC(trx) {
+  const t = trx || db;
+  const cc = await t('credit_cards').first();
+  if (!cc) throw new Error('Credit card record not found. Run supabase_subscriptions_v1.sql first.');
+  return cc;
+}
+
+// ─── GET / ───────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
     const { wing_id, status } = req.query;
     let q = db('subscriptions')
-      .leftJoin('business_wings', 'business_wings.id', 'subscriptions.business_wing_id')
-      .select('subscriptions.*', 'business_wings.name as wing_name')
-      .orderBy('subscriptions.next_renewal_date');
-    if (wing_id) q = q.where('subscriptions.business_wing_id', wing_id);
+      .leftJoin('business_wings', 'business_wings.id', 'subscriptions.wing_id')
+      .select(
+        'subscriptions.id',
+        'subscriptions.wing_id',
+        'subscriptions.service_name',
+        'subscriptions.description',
+        'subscriptions.amount',
+        'subscriptions.currency_code',
+        'subscriptions.billing_cycle',
+        'subscriptions.next_billing_date',
+        'subscriptions.last_paid_date',
+        'subscriptions.last_paid_amount',
+        'subscriptions.status',
+        'subscriptions.is_active',
+        'subscriptions.notes',
+        'subscriptions.vendor_url',
+        'subscriptions.credit_card_id',
+        'business_wings.name as wing_name',
+      )
+      .orderBy('subscriptions.next_billing_date');
+
+    if (wing_id) q = q.where('subscriptions.wing_id', wing_id);
     if (status)  q = q.where('subscriptions.status', status);
+    else         q = q.whereNot('subscriptions.status', 'cancelled');
+
     res.json(await q);
   } catch (err) {
     res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
+// ─── GET /upcoming ───────────────────────────────────────────────────────────
 router.get('/upcoming', async (req, res) => {
   try {
     const { wing_id } = req.query;
     let q = db('subscriptions')
-      .where('status', 'Active')
-      .where('next_renewal_date', '<=', db.raw("CURRENT_DATE + INTERVAL '30 days'"))
-      .orderBy('next_renewal_date');
-    if (wing_id) q = q.where('business_wing_id', wing_id);
+      .where('status', 'active')
+      .where('next_billing_date', '<=', db.raw("CURRENT_DATE + INTERVAL '30 days'"))
+      .orderBy('next_billing_date');
+    if (wing_id) q = q.where('wing_id', wing_id);
     res.json(await q);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
 });
 
+// ─── GET /cc-balance ─────────────────────────────────────────────────────────
+router.get('/cc-balance', async (req, res) => {
+  try {
+    const cc = await getCC();
+    res.json(cc);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST / ──────────────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
   try {
-    const { wing_id, service_name, vendor, amount, currency, billing_cycle, start_date, next_renewal_date, bank_account_id, payment_method, reminder_days_before, notes } = req.body;
-    if (!wing_id || !service_name || !amount || !next_renewal_date) {
-      return res.status(400).json({ error: 'wing_id, service_name, amount, next_renewal_date required' });
+    const {
+      wing_id, service_name, description, amount, currency_code,
+      billing_cycle, next_billing_date, notes, vendor_url,
+    } = req.body;
+
+    if (!wing_id || !service_name || !amount || !next_billing_date) {
+      return res.status(400).json({ error: 'wing_id, service_name, amount, next_billing_date required' });
     }
+
+    const cc = await getCC();
+
     const [sub] = await db('subscriptions').insert({
-      business_wing_id: wing_id,
-      service_name, vendor, amount: parseFloat(amount),
-      currency: currency || 'USD',
-      billing_cycle: billing_cycle || 'Monthly',
-      start_date, next_renewal_date,
-      bank_account_id, payment_method,
-      reminder_days_before: reminder_days_before || 7,
-      notes,
+      wing_id,
+      service_name,
+      description:    description    || null,
+      amount:         parseFloat(amount),
+      currency_code:  currency_code  || 'PKR',
+      exchange_rate:  1,
+      pkr_amount:     parseFloat(amount),
+      billing_cycle:  billing_cycle  || 'monthly',
+      next_billing_date,
+      status:         'active',
+      is_active:      true,
+      notes:          notes          || null,
+      vendor_url:     vendor_url     || null,
+      credit_card_id: cc.id,
     }).returning('*');
+
     res.status(201).json(sub);
   } catch (err) {
     res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
+// ─── PUT /:id ─────────────────────────────────────────────────────────────────
 router.put('/:id', async (req, res) => {
   try {
-    const { service_name, amount, next_renewal_date, status, bank_account_id, notes } = req.body;
-    const [sub] = await db('subscriptions').where({ id: req.params.id })
-      .update({ service_name, amount, next_renewal_date, status, bank_account_id, notes })
-      .returning('*');
+    const sub = await db('subscriptions').where({ id: req.params.id }).first();
     if (!sub) return res.status(404).json({ error: 'Not found' });
-    res.json(sub);
+
+    const {
+      wing_id, service_name, description, amount, currency_code,
+      billing_cycle, next_billing_date, status, notes, vendor_url,
+    } = req.body;
+
+    const update = {};
+    if (wing_id           !== undefined) update.wing_id           = wing_id;
+    if (service_name      !== undefined) update.service_name      = service_name;
+    if (description       !== undefined) update.description       = description || null;
+    if (amount            !== undefined) { update.amount = parseFloat(amount); update.pkr_amount = parseFloat(amount); }
+    if (currency_code     !== undefined) update.currency_code     = currency_code;
+    if (billing_cycle     !== undefined) update.billing_cycle     = billing_cycle;
+    if (next_billing_date !== undefined) update.next_billing_date = next_billing_date;
+    if (notes             !== undefined) update.notes             = notes || null;
+    if (vendor_url        !== undefined) update.vendor_url        = vendor_url || null;
+    if (status            !== undefined) {
+      update.status    = status;
+      update.is_active = status === 'active';
+    }
+
+    await db('subscriptions').where({ id: req.params.id }).update(update);
+    const updated = await db('subscriptions').where({ id: req.params.id }).first();
+    res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
+// ─── POST /:id/pay — pay via credit card ─────────────────────────────────────
+router.post('/:id/pay', async (req, res) => {
+  try {
+    const { paid_amount, paid_date } = req.body;
+    if (!paid_amount) return res.status(400).json({ error: 'paid_amount required' });
+
+    const sub = await db('subscriptions').where({ id: req.params.id }).first();
+    if (!sub) return res.status(404).json({ error: 'Not found' });
+
+    const amount = parseFloat(paid_amount);
+    const date   = paid_date || new Date().toISOString().split('T')[0];
+
+    await db.transaction(async (trx) => {
+      const cc = await getCC(trx);
+      if (cc.current_balance < amount) throw new Error('Insufficient credit card balance');
+
+      const newCCBalance = parseFloat(cc.current_balance) - amount;
+
+      // Debit CC balance
+      await trx('credit_cards').where({ id: cc.id }).update({ current_balance: newCCBalance });
+
+      // Record CC transaction
+      await trx('credit_card_txns').insert({
+        credit_card_id:  cc.id,
+        txn_date:        date,
+        merchant:        sub.service_name,
+        description:     `Subscription — ${sub.billing_cycle}`,
+        amount,
+        currency:        sub.currency_code || 'PKR',
+        category:        'subscriptions',
+        business_wing_id: sub.wing_id,
+        txn_type:        'debit',
+        reference_type:  'subscription',
+        reference_id:    sub.id,
+        status:          'reconciled',
+      });
+
+      // Advance next billing date
+      const nextDate = advanceDueDate(sub.next_billing_date, sub.billing_cycle);
+
+      await trx('subscriptions').where({ id: sub.id }).update({
+        last_paid_date:   date,
+        last_paid_amount: amount,
+        next_billing_date: nextDate || sub.next_billing_date,
+        status:            sub.billing_cycle === 'once' ? 'paused' : 'active',
+        is_active:         sub.billing_cycle !== 'once',
+      });
+    });
+
+    const updated = await db('subscriptions').where({ id: req.params.id }).first();
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+// ─── DELETE /:id ──────────────────────────────────────────────────────────────
 router.delete('/:id', async (req, res) => {
   try {
     const n = await db('subscriptions').where({ id: req.params.id }).delete();
