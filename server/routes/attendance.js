@@ -158,23 +158,17 @@ router.post('/import', upload.single('file'), async (req, res) => {
     const existingMap = {};
     for (const r of existingRows) existingMap[`${r.resource_id}_${r.record_date}`] = r.id;
 
-    // ── 5. Split into inserts and updates ─────────────────────────────────────
+    // ── 5. Skip existing records — only insert truly new ones ─────────────────
     const toInsert = [];
-    const toUpdate = [];
+    const skipped  = [];
     for (const p of processed) {
       const key = `${p.resource_id}_${p.record_date}`;
-      if (existingMap[key]) toUpdate.push({ id: existingMap[key], ...p });
+      if (existingMap[key]) skipped.push(key);
       else                  toInsert.push(p);
     }
 
-    // ── 6. Bulk insert + parallel updates ─────────────────────────────────────
+    // ── 6. Bulk insert new records only ───────────────────────────────────────
     if (toInsert.length) await db('attendance_records').insert(toInsert);
-    if (toUpdate.length) {
-      await Promise.all(toUpdate.map(r =>
-        db('attendance_records').where({ id: r.id })
-          .update({ check_in: r.check_in, check_out: r.check_out, status: r.status })
-      ));
-    }
 
     // ── 7. Auto-mark leave for weekdays with no punch ─────────────────────────
     // For each resource that appeared in the import, any weekday in the import
@@ -204,9 +198,9 @@ router.post('/import', upload.single('file'), async (req, res) => {
     if (leaveRows.length) await db('attendance_records').insert(leaveRows);
 
     res.json({
-      message: `Import complete — ${toInsert.length} added, ${toUpdate.length} updated, ${leaveRows.length} leave days generated${unknownIds.size ? `, ${unknownIds.size} unknown IDs skipped` : ''}`,
+      message: `Import complete — ${toInsert.length} added, ${skipped.length} duplicate${skipped.length !== 1 ? 's' : ''} skipped, ${leaveRows.length} leave days generated${unknownIds.size ? `, ${unknownIds.size} unknown IDs skipped` : ''}`,
       inserted: toInsert.length,
-      updated:  toUpdate.length,
+      skipped:  skipped.length,
       leave:    leaveRows.length,
     });
   } catch (err) {
