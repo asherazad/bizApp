@@ -168,7 +168,9 @@ router.post('/import', upload.single('file'), async (req, res) => {
     }
 
     // ── 6. Bulk insert new records only ───────────────────────────────────────
-    if (toInsert.length) await db('attendance_records').insert(toInsert);
+    if (toInsert.length)
+      await db('attendance_records').insert(toInsert)
+        .onConflict(['resource_id', 'record_date']).ignore();
 
     // ── 7. Auto-mark leave for weekdays with no punch ─────────────────────────
     // For each resource that appeared in the import, any weekday in the import
@@ -195,7 +197,9 @@ router.post('/import', upload.single('file'), async (req, res) => {
         }
       }
     }
-    if (leaveRows.length) await db('attendance_records').insert(leaveRows);
+    if (leaveRows.length)
+      await db('attendance_records').insert(leaveRows)
+        .onConflict(['resource_id', 'record_date']).ignore();
 
     res.json({
       message: `Import complete — ${toInsert.length} added, ${skipped.length} duplicate${skipped.length !== 1 ? 's' : ''} skipped, ${leaveRows.length} leave days generated${unknownIds.size ? `, ${unknownIds.size} unknown IDs skipped` : ''}`,
