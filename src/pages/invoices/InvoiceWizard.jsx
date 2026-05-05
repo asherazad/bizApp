@@ -190,24 +190,32 @@ function StepUpload({ onExtracted, uploadedFile, setUploadedFile }) {
 
       {/* File badge if already uploaded */}
       {uploadedFile && !uploading && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--success-light)', border: '1px solid var(--success-border)', borderRadius: 8, padding: '10px 14px', width: '100%', maxWidth: 480 }}>
-          <FileText size={16} color="var(--success)"/>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {uploadedFile.file_name}
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--success-light)', border: '1px solid var(--success-border)', borderRadius: 8, padding: '10px 14px', width: '100%', maxWidth: 480 }}>
+            <FileText size={16} color="var(--success)"/>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {uploadedFile.file_name}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+                {humanFileSize(uploadedFile.file_size)} · Parsed ✓
+                {uploadedFile.temp_file_path ? ' · Stored in bucket ✓' : ''}
+              </div>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
-              {humanFileSize(uploadedFile.file_size)} · Uploaded ✓
-            </div>
+            <button
+              className="btn btn-secondary btn-sm"
+              type="button"
+              onClick={() => { setUploadedFile(null); fileRef.current?.click(); }}
+            >
+              Replace
+            </button>
           </div>
-          <button
-            className="btn btn-secondary btn-sm"
-            type="button"
-            onClick={() => { setUploadedFile(null); fileRef.current?.click(); }}
-          >
-            Replace
-          </button>
-        </div>
+          {!uploadedFile.temp_file_path && (
+            <div style={{ width: '100%', maxWidth: 480, background: 'var(--warning-light)', border: '1px solid var(--warning-border)', borderRadius: 8, padding: '10px 14px', fontSize: 12 }}>
+              ⚠ File could not be stored in Supabase (bucket may not exist). The invoice data will still be imported but no file will be attached. Create the <strong>invoice-documents</strong> bucket in Supabase Storage to enable file attachment.
+            </div>
+          )}
+        </>
       )}
 
       {!uploadedFile && (
@@ -670,7 +678,7 @@ function StepWings({ wings, totalAmount, currency, exchRate, wingMode, setWingMo
 }
 
 // ─── Step 5 — Confirm ─────────────────────────────────────────────────────────
-function StepConfirm({ form, lineItems, selectedPO, wings, wingMode, singleWingId, wingSplits, autoSingleWing }) {
+function StepConfirm({ form, lineItems, selectedPO, wings, wingMode, singleWingId, wingSplits, autoSingleWing, uploadedFile }) {
   const subtotal = lineItems.reduce((s, i) => s + parseFloat(i.amount||0), 0);
   const taxAmt   = parseFloat(form.tax_amount||0);
   const total    = subtotal + taxAmt;
@@ -721,6 +729,7 @@ function StepConfirm({ form, lineItems, selectedPO, wings, wingMode, singleWingI
             ['PKR Equiv',    form.currency !== 'PKR' ? formatCurrency(pkr, 'PKR') : '—'],
             ['Linked PO',    selectedPO ? `PO #${selectedPO.po_number}` : 'None'],
             ['Tax',          formatCurrency(taxAmt, form.currency)],
+            ['File Attached', uploadedFile?.temp_file_path ? `${uploadedFile.file_name}` : 'None'],
           ].map(([l, v]) => (
             <div key={l} style={{ background: 'var(--surface)', borderRadius: 8, padding: '8px 12px' }}>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 2 }}>{l}</div>
@@ -905,7 +914,7 @@ export default function InvoiceWizard({ wings, mode = 'import', onClose, onSaved
     2: <StepReview form={form} setForm={setForm} lineItems={lineItems} setLineItems={setLineItems} clients={clients}/>,
     3: <StepPO form={form} totalAmount={totalAmount} currency={form.currency} exchRate={exchRate} selectedPO={selectedPO} setSelectedPO={setSelectedPO}/>,
     4: <StepWings wings={wings} totalAmount={totalAmount} currency={form.currency} exchRate={exchRate} wingMode={wingMode} setWingMode={setWingMode} singleWingId={singleWingId} setSingleWingId={setSingleWingId} wingSplits={wingSplits} setWingSplits={setWingSplits} lineItems={lineItems} setLineItems={setLineItems}/>,
-    5: <StepConfirm form={form} lineItems={lineItems} selectedPO={selectedPO} wings={wings} wingMode={wingMode} singleWingId={singleWingId} wingSplits={wingSplits} autoSingleWing={autoSingleWing}/>,
+    5: <StepConfirm form={form} lineItems={lineItems} selectedPO={selectedPO} wings={wings} wingMode={wingMode} singleWingId={singleWingId} wingSplits={wingSplits} autoSingleWing={autoSingleWing} uploadedFile={uploadedFile}/>,
   };
 
   const stepperStep = mode === 'import' ? step : step - 1;
