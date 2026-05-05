@@ -51,7 +51,7 @@ function WaveImportModal({ staged, wings, onClose, onSaved }) {
   const splitValid = Math.abs(splitTotal - total) < 0.02;
 
   useEffect(() => {
-    api.get('/purchase-orders').then(r => setPos(r.data)).catch(() => {});
+    api.get('/purchase-orders', { params: { exclude_expired: true } }).then(r => setPos(r.data)).catch(() => {});
   }, []);
 
   function updateSplit(id, field, val) {

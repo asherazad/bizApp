@@ -246,7 +246,12 @@ export default function PurchaseOrders() {
                       <td className="font-mono" style={{ color: 'var(--amber-dark)' }}>
                         {formatCurrency(parseFloat(p.po_value || 0) - parseFloat(p.invoiced_amount || 0), p.currency)}
                       </td>
-                      <td><span className={`badge ${statusBadgeClass(p.status)}`}>{formatStatus(p.status)}</span></td>
+                      <td>
+                        {p.expiry_date && new Date(p.expiry_date) < new Date()
+                          ? <span className="badge badge-danger">Expired</span>
+                          : <span className={`badge ${statusBadgeClass(p.status)}`}>{formatStatus(p.status)}</span>
+                        }
+                      </td>
                       <td>
                         <button className="btn btn-secondary btn-sm" onClick={() => openEdit(p)} title="Edit">
                           <Pencil size={13} />

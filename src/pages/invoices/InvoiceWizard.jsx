@@ -387,7 +387,7 @@ function StepPO({ form, totalAmount, currency, exchRate, selectedPO, setSelected
   const [invoiced, setInvoiced] = useState(0);
 
   useEffect(() => {
-    const params = {};
+    const params = { exclude_expired: true };
     if (activeWing?.id) params.wing_id = activeWing.id;
     api.get('/purchase-orders', { params }).then(r => setAllPos(r.data)).catch(() => {});
   }, [activeWing?.id]);

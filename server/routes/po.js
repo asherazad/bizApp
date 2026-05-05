@@ -17,9 +17,14 @@ router.get('/', async (req, res) => {
         db.raw('COALESCE((SELECT SUM(total_amount) FROM invoices WHERE invoices.po_id = purchase_orders.id), 0) as invoiced_amount')
       )
       .orderBy('purchase_orders.issue_date', 'desc');
-    if (wing_id)   q = q.where('purchase_orders.business_wing_id', wing_id);
-    if (client_id) q = q.where('purchase_orders.client_id', client_id);
-    if (status)    q = q.where('purchase_orders.status', status);
+    if (wing_id)        q = q.where('purchase_orders.business_wing_id', wing_id);
+    if (client_id)      q = q.where('purchase_orders.client_id', client_id);
+    if (status)         q = q.where('purchase_orders.status', status);
+    if (req.query.exclude_expired === 'true')
+      q = q.where(function () {
+        this.whereNull('purchase_orders.expiry_date')
+            .orWhere('purchase_orders.expiry_date', '>=', db.raw('CURRENT_DATE'));
+      });
     res.json(await q);
   } catch (err) {
     res.status(500).json({ error: 'Server error', detail: err.message });
