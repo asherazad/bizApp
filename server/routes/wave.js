@@ -33,15 +33,15 @@ const INVOICES_QUERY = `
             invoiceDate
             dueDate
             memo
-            total      { value currency { code } }
-            amountDue  { value }
+            total      { raw currency { code } }
+            amountDue  { raw }
             customer   { name email }
             items {
               description
               quantity
               unitPrice
-              subtotal { value }
-              taxes { amount { value } salesTax { name rate } }
+              subtotal { raw }
+              taxes { amount { raw } salesTax { name rate } }
             }
           }
         }
@@ -49,6 +49,10 @@ const INVOICES_QUERY = `
     }
   }
 `;
+
+// Wave returns MoneyV2.raw in the smallest currency unit (e.g. paisa for PKR,
+// cents for USD). Divide by 100 to get the major-unit decimal amount.
+function fromRaw(raw) { return (parseInt(raw, 10) || 0) / 100; }
 
 // GET /wave/test — verify credentials
 router.get('/test', async (req, res) => {
@@ -122,14 +126,14 @@ router.post('/sync', async (req, res) => {
     for (const wi of toInsert) {
       const lineItems = (wi.items || []).map(item => ({
         description: item.description || '',
-        quantity:    parseFloat(item.quantity)      || 1,
-        unit_price:  parseFloat(item.unitPrice)     || 0,
-        amount:      parseFloat(item.subtotal?.value) || 0,
+        quantity:    parseFloat(item.quantity)  || 1,
+        unit_price:  parseFloat(item.unitPrice) || 0,
+        amount:      fromRaw(item.subtotal?.raw),
         notes: '',
       }));
 
       const taxAmount = (wi.items || []).reduce((sum, item) =>
-        sum + (item.taxes || []).reduce((s, t) => s + parseFloat(t.amount?.value || 0), 0), 0);
+        sum + (item.taxes || []).reduce((s, t) => s + fromRaw(t.amount?.raw), 0), 0);
 
       await db('wave_invoice_staging').insert({
         wave_invoice_id: wi.id,
@@ -139,7 +143,7 @@ router.post('/sync', async (req, res) => {
         invoice_date:    wi.invoiceDate   || new Date().toISOString().split('T')[0],
         due_date:        wi.dueDate       || null,
         currency:        wi.total?.currency?.code || 'USD',
-        total_amount:    parseFloat(wi.total?.value || 0),
+        total_amount:    fromRaw(wi.total?.raw),
         tax_amount:      taxAmount,
         line_items:      JSON.stringify(lineItems),
         notes:           wi.memo || null,
