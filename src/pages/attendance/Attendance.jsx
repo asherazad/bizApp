@@ -467,6 +467,70 @@ function ResourceView({ wing }) {
   const totalDays     = records.length;
 
   const selectedRes = resources.find(r => r.id === selectedId);
+  const attendancePct = totalDays ? Math.round((presentCount / totalDays) * 100) : null;
+
+  function printPDF() {
+    const name  = selectedRes?.full_name || 'Resource';
+    const title = `Attendance — ${name} (${from} to ${to})`;
+
+    const statusLabel = (s) => (s || '').replace(/_/g, ' ');
+    const statusColor = { present: '#16a34a', half_day: '#ea580c', leave: '#d97706', absent: '#dc2626' };
+
+    const dataRows = records.map(r => {
+      const hrs = calcHours(r.check_in, r.check_out);
+      const col = statusColor[r.status] || '#64748b';
+      return `<tr>
+        <td style="padding:4px 8px;white-space:nowrap">${r.record_date?.slice(0,10) || ''}</td>
+        <td style="padding:4px 8px;font-family:monospace">${r.check_in  || '—'}</td>
+        <td style="padding:4px 8px;font-family:monospace">${r.check_out || '—'}</td>
+        <td style="padding:4px 8px;font-family:monospace${hrs?.short ? ';color:#ea580c;font-weight:700' : ''}">${hrs ? hrs.label : '—'}</td>
+        <td style="padding:4px 8px"><span style="background:${col}22;color:${col};padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;text-transform:capitalize">${statusLabel(r.status)}</span></td>
+      </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+      <title>${title}</title>
+      <style>
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:system-ui,sans-serif;font-size:11px;padding:16px;color:#0f172a}
+        h2{font-size:14px;font-weight:700;margin-bottom:4px}
+        .sub{font-size:11px;color:#64748b;margin-bottom:14px}
+        .stats{display:flex;gap:12px;margin-bottom:14px}
+        .stat{border:1px solid #e2e8f0;border-radius:6px;padding:8px 14px;min-width:100px}
+        .stat-label{font-size:10px;color:#64748b;margin-bottom:2px}
+        .stat-value{font-size:18px;font-weight:700}
+        table{border-collapse:collapse;width:100%}
+        th,td{border:1px solid #e2e8f0;font-size:11px}
+        th{background:#f8fafc;padding:5px 8px;text-align:left;font-weight:600}
+        tbody tr:nth-child(even){background:#fafafa}
+        @media print{body{padding:6px}@page{size:portrait;margin:10mm}}
+      </style></head>
+      <body>
+        <h2>${title}</h2>
+        <div class="sub">${selectedRes?.job_type ? `Job Type: ${selectedRes.job_type}` : ''}</div>
+        <div class="stats">
+          <div class="stat"><div class="stat-label">Present</div><div class="stat-value" style="color:#16a34a">${presentCount}</div></div>
+          <div class="stat"><div class="stat-label">Short Hours</div><div class="stat-value" style="color:#ea580c">${halfCount}</div></div>
+          <div class="stat"><div class="stat-label">Leave</div><div class="stat-value" style="color:#d97706">${leaveCount}</div></div>
+          <div class="stat"><div class="stat-label">Attendance %</div><div class="stat-value">${attendancePct !== null ? attendancePct + '%' : '—'}</div></div>
+        </div>
+        <table>
+          <thead><tr><th>Date</th><th>Check-in</th><th>Check-out</th><th>Hours Worked</th><th>Status</th></tr></thead>
+          <tbody>${dataRows || '<tr><td colspan="5" style="text-align:center;padding:20px;color:#94a3b8">No records</td></tr>'}</tbody>
+        </table>
+      </body></html>`;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-9999px;top:-9999px;';
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open(); doc.write(html); doc.close();
+    iframe.onload = () => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => document.body.removeChild(iframe), 2000);
+    };
+  }
 
   return (
     <div>
@@ -488,6 +552,10 @@ function ResourceView({ wing }) {
           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>To</span>
           <input type="date" className="form-control" style={{ height: 34 }} value={to} onChange={e => setTo(e.target.value)} />
         </div>
+        <button className="btn btn-secondary btn-sm" onClick={printPDF} disabled={loading || !records.length}
+          style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <Printer size={13}/> PDF
+        </button>
       </div>
 
       {/* Stats row */}
