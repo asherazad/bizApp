@@ -41,9 +41,14 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const { name, contact_person, email, phone, address, is_active } = req.body;
+    const { wing_id, name, type, contact_person, email, phone, address, ntn, strn, is_active } = req.body;
+    const update = { name, contact_person, email, phone, address, is_active };
+    if (wing_id) update.business_wing_id = wing_id;
+    if (type    !== undefined) update.type = type;
+    if (ntn     !== undefined) update.ntn  = ntn;
+    if (strn    !== undefined) update.strn = strn;
     const [client] = await db('clients').where({ id: req.params.id })
-      .update({ name, contact_person, email, phone, address, is_active })
+      .update(update)
       .returning('*');
     if (!client) return res.status(404).json({ error: 'Not found' });
     res.json(client);

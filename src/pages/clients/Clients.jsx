@@ -7,7 +7,7 @@ import { Plus, Pencil, Users2 } from 'lucide-react';
 function ClientModal({ client, wings, activeWing, onClose, onSaved }) {
   const toast = useToast();
   const [form, setForm] = useState({
-    wing_id: client?.wing_id || activeWing?.id || '', name: client?.name || '',
+    wing_id: client?.business_wing_id || activeWing?.id || '', name: client?.name || '',
     email: client?.email || '', phone: client?.phone || '',
     address: client?.address || '', ntn: client?.ntn || '',
     strn: client?.strn || '', type: client?.type || 'client',
