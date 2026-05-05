@@ -468,11 +468,47 @@ router.post('/', async (req, res) => {
 // ─── PUT /:id ─────────────────────────────────────────────────────────────────
 router.put('/:id', async (req, res) => {
   try {
-    const allowed = ['status','notes','vendor_name','client_name','due_date'];
-    const update  = Object.fromEntries(allowed.filter(k => k in req.body).map(k => [k, req.body[k]]));
-    const [inv] = await db('invoices').where({ id: req.params.id }).update(update).returning('*');
+    const inv = await db('invoices').where({ id: req.params.id }).first();
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
-    res.json(inv);
+    if (inv.status === 'Received')
+      return res.status(409).json({ error: 'Received invoices cannot be edited' });
+
+    const {
+      invoice_number, vendor_name, client_name,
+      invoice_date, due_date, currency, exchange_rate,
+      tax_amount, line_items, notes,
+    } = req.body;
+
+    const update = {};
+    if (invoice_number !== undefined) update.invoice_number = invoice_number;
+    if (vendor_name    !== undefined) update.vendor_name    = vendor_name    || null;
+    if (client_name    !== undefined) update.client_name    = client_name    || null;
+    if (invoice_date   !== undefined) update.invoice_date   = invoice_date;
+    if (due_date       !== undefined) update.due_date       = due_date       || null;
+    if (currency       !== undefined) update.currency       = currency;
+    if (notes          !== undefined) update.notes          = notes          || null;
+
+    // Recalculate totals when financial fields change
+    const newCurrency    = currency       ?? inv.currency;
+    const newExchRate    = parseFloat(exchange_rate ?? inv.exchange_rate) || 1;
+    const newTaxAmount   = parseFloat(tax_amount    ?? inv.tax_amount)    || 0;
+    const newLineItems   = line_items !== undefined
+      ? line_items
+      : (typeof inv.line_items === 'string' ? JSON.parse(inv.line_items || '[]') : inv.line_items || []);
+
+    if (exchange_rate !== undefined) update.exchange_rate = newExchRate;
+    if (tax_amount    !== undefined) update.tax_amount    = newTaxAmount;
+    if (line_items    !== undefined) update.line_items    = JSON.stringify(newLineItems);
+
+    if (exchange_rate !== undefined || tax_amount !== undefined || line_items !== undefined) {
+      const lineSubtotal  = newLineItems.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      const newTotal      = lineSubtotal + newTaxAmount;
+      update.total_amount    = newTotal;
+      update.pkr_equivalent  = newCurrency === 'PKR' ? newTotal : newTotal * newExchRate;
+    }
+
+    const [updated] = await db('invoices').where({ id: req.params.id }).update(update).returning('*');
+    res.json(updated);
   } catch (err) { res.status(500).json({ error: 'Server error', detail: err.message }); }
 });
 

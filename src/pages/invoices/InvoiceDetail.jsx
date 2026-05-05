@@ -2,10 +2,190 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { formatCurrency, formatDate, statusBadgeClass } from '../../lib/format';
-import { X, CheckCircle, AlertTriangle, Trash2, Paperclip } from 'lucide-react';
+import { X, CheckCircle, AlertTriangle, Trash2, Paperclip, Pencil, Plus } from 'lucide-react';
 import InvoiceFileViewer from '../../components/InvoiceFileViewer';
 
 const MODE_LABEL = { single: 'Single Wing', split: 'Split Between Wings', line_item: 'By Line Item' };
+const CURRENCIES = ['PKR', 'USD', 'EUR', 'AED', 'GBP'];
+const EMPTY_ITEM = { description: '', notes: '', quantity: 1, unit_price: '', amount: '' };
+
+function calcItem(item, key, val) {
+  const next = { ...item, [key]: val };
+  if (key === 'unit_price' || key === 'quantity')
+    next.amount = (parseFloat(next.unit_price || 0) * parseFloat(next.quantity || 1)).toFixed(2);
+  return next;
+}
+
+// ─── Edit Modal ───────────────────────────────────────────────────────────────
+function EditInvoiceModal({ inv, onClose, onSaved }) {
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
+
+  const initItems = (() => {
+    try { return Array.isArray(inv.line_items) ? inv.line_items : JSON.parse(inv.line_items || '[]'); }
+    catch { return []; }
+  })();
+
+  const [form, setForm] = useState({
+    invoice_number: inv.invoice_number || '',
+    vendor_name:    inv.vendor_name    || '',
+    client_name:    inv.client_name    || '',
+    invoice_date:   inv.invoice_date?.split('T')[0]  || '',
+    due_date:       inv.due_date?.split('T')[0]       || '',
+    currency:       inv.currency       || 'PKR',
+    exchange_rate:  inv.exchange_rate  || '1',
+    tax_rate:       '',
+    tax_amount:     inv.tax_amount     || '0',
+    notes:          inv.notes          || '',
+  });
+  const [lineItems, setLineItems] = useState(
+    initItems.length ? initItems : [{ ...EMPTY_ITEM }]
+  );
+
+  function f(k) { return e => setForm(p => ({ ...p, [k]: e.target.value })); }
+  function setItem(i, key, val) { setLineItems(p => p.map((it, idx) => idx === i ? calcItem(it, key, val) : it)); }
+  function addItem()     { setLineItems(p => [...p, { ...EMPTY_ITEM }]); }
+  function removeItem(i) { setLineItems(p => p.filter((_, idx) => idx !== i)); }
+
+  const subtotal = lineItems.reduce((s, i) => s + parseFloat(i.amount || 0), 0);
+  const taxAmt   = parseFloat(form.tax_amount || 0);
+  const total    = subtotal + taxAmt;
+
+  async function submit(e) {
+    e.preventDefault(); setSaving(true);
+    try {
+      await api.put(`/invoices/${inv.id}`, {
+        invoice_number: form.invoice_number,
+        vendor_name:    form.vendor_name    || null,
+        client_name:    form.client_name    || null,
+        invoice_date:   form.invoice_date,
+        due_date:       form.due_date       || null,
+        currency:       form.currency,
+        exchange_rate:  parseFloat(form.exchange_rate) || 1,
+        tax_amount:     parseFloat(form.tax_amount)    || 0,
+        line_items:     lineItems,
+        notes:          form.notes          || null,
+      });
+      toast('Invoice updated', 'success');
+      onSaved();
+    } catch (err) { toast(err.response?.data?.error || 'Error', 'error'); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 780, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Edit Invoice #{inv.invoice_number}</h3>
+          <button className="btn btn-secondary btn-sm" onClick={onClose}><X size={14}/></button>
+        </div>
+        <form onSubmit={submit} style={{ display: 'contents' }}>
+          <div className="modal-body" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+            <div className="grid-2">
+              <div className="form-group">
+                <label className="form-label">Invoice # *</label>
+                <input className="form-control" required value={form.invoice_number} onChange={f('invoice_number')}/>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Client</label>
+                <input className="form-control" value={form.vendor_name} onChange={f('vendor_name')} placeholder="Client name"/>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Bill To</label>
+              <input className="form-control" value={form.client_name} onChange={f('client_name')} placeholder="Bill-to name"/>
+            </div>
+
+            <div className="grid-2">
+              <div className="form-group">
+                <label className="form-label">Invoice Date *</label>
+                <input type="date" className="form-control" required value={form.invoice_date} onChange={f('invoice_date')}/>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Due Date</label>
+                <input type="date" className="form-control" value={form.due_date} onChange={f('due_date')}/>
+              </div>
+            </div>
+
+            <div className="grid-3">
+              <div className="form-group">
+                <label className="form-label">Currency</label>
+                <select className="form-control" value={form.currency} onChange={f('currency')}>
+                  {CURRENCIES.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+              {form.currency !== 'PKR' && (
+                <div className="form-group">
+                  <label className="form-label">Exchange Rate → PKR</label>
+                  <input type="number" step="0.0001" className="form-control" value={form.exchange_rate} onChange={f('exchange_rate')}/>
+                </div>
+              )}
+              <div className="form-group">
+                <label className="form-label">Tax Rate</label>
+                <select className="form-control" value={form.tax_rate} onChange={e => {
+                  const rate = e.target.value;
+                  const computed = rate ? (subtotal * parseFloat(rate) / 100).toFixed(2) : form.tax_amount;
+                  setForm(p => ({ ...p, tax_rate: rate, tax_amount: computed }));
+                }}>
+                  <option value="">Custom</option>
+                  {[0, 5, 10, 15, 16, 17, 20].map(r => <option key={r} value={r}>{r}%</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Tax Amount ({form.currency})</label>
+                <input type="number" step="0.01" className="form-control" value={form.tax_amount} placeholder="0"
+                  onChange={e => setForm(p => ({ ...p, tax_rate: '', tax_amount: e.target.value }))}/>
+              </div>
+            </div>
+
+            {/* Line items */}
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>Line Items</div>
+              {lineItems.map((it, i) => (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '2.5fr 0.8fr 1fr 1fr auto', gap: 6, marginBottom: 8, alignItems: 'start' }}>
+                  <div>
+                    <input className="form-control" placeholder="Description *" value={it.description} onChange={e => setItem(i, 'description', e.target.value)}/>
+                    <input className="form-control" placeholder="Notes (optional)" value={it.notes || ''} style={{ marginTop: 4, fontSize: 12 }} onChange={e => setItem(i, 'notes', e.target.value)}/>
+                  </div>
+                  <input type="number" step="0.001" className="form-control" placeholder="Qty" value={it.quantity} onChange={e => setItem(i, 'quantity', e.target.value)}/>
+                  <input type="number" step="0.01" className="form-control" placeholder="Rate" value={it.unit_price} onChange={e => setItem(i, 'unit_price', e.target.value)}/>
+                  <input type="number" step="0.01" className="form-control" placeholder="Amount" value={it.amount} onChange={e => setItem(i, 'amount', e.target.value)}/>
+                  {lineItems.length > 1
+                    ? <button type="button" className="btn btn-secondary btn-sm" style={{ padding: '6px 8px' }} onClick={() => removeItem(i)}><X size={12}/></button>
+                    : <div/>}
+                </div>
+              ))}
+              <button type="button" className="btn btn-secondary btn-sm" onClick={addItem}><Plus size={12}/> Add Line</button>
+            </div>
+
+            {/* Totals */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ minWidth: 260, background: 'var(--bg)', borderRadius: 10, padding: '12px 16px', fontSize: 13 }}>
+                {[['Subtotal', subtotal, false], ['Tax', taxAmt, false], ['Total', total, true]].map(([l, v, b]) => (
+                  <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontWeight: b ? 700 : 400, borderTop: b ? '1px solid var(--border)' : 'none', paddingTop: b ? 6 : 0, marginTop: b ? 4 : 0 }}>
+                    <span className="text-muted">{l}</span>
+                    <span className="font-mono">{formatCurrency(v, form.currency)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Notes</label>
+              <textarea className="form-control" rows={2} value={form.notes} onChange={f('notes')}/>
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 // ─── Receive Modal ────────────────────────────────────────────────────────────
 function ReceiveModal({ invoice, wings, onClose, onSaved }) {
@@ -79,6 +259,7 @@ export default function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) 
   const toast = useToast();
   const [inv, setInv]                   = useState(null);
   const [receiveModal, setReceive]      = useState(false);
+  const [editOpen, setEditOpen]         = useState(false);
   const [updating, setUpdating]         = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting]         = useState(false);
@@ -384,6 +565,11 @@ export default function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) 
               {!confirmDelete && canEdit && (
                 <button className="btn btn-secondary btn-sm" disabled={updating} onClick={() => updateStatus('Disputed')}>Mark Disputed</button>
               )}
+              {!confirmDelete && canEdit && (
+                <button className="btn btn-secondary btn-sm" onClick={() => setEditOpen(true)}>
+                  <Pencil size={13}/> Edit
+                </button>
+              )}
             </div>
             <div className="flex gap-2">
               {!confirmDelete && ['Pending','Overdue'].includes(inv.status) && (
@@ -402,6 +588,14 @@ export default function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) 
           invoice={inv} wings={wings}
           onClose={() => setReceive(false)}
           onSaved={() => { setReceive(false); load(); onRefresh(); }}
+        />
+      )}
+
+      {editOpen && (
+        <EditInvoiceModal
+          inv={inv}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => { setEditOpen(false); load(); onRefresh(); }}
         />
       )}
     </>
