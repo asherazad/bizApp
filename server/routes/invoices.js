@@ -136,41 +136,50 @@ function splitsFromLineItems(lineItems, total, taxAmount, currency, exchRate) {
 
 // ─── POST /parse  (multipart file upload + extraction) ────────────────────────
 router.post('/parse', upload.single('file'), async (req, res) => {
-  const file = req.file;
-  if (!file) return res.status(400).json({ error: 'A file (PDF or image) is required' });
+  try {
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: 'A file (PDF or image) is required' });
 
-  let temp_file_path = null;
-  let parsed_fields  = { invoice_number:'', invoice_date:'', due_date:'', vendor_name:'', client_name:'', po_number_ref:'', currency:'PKR', tax_amount:'0', notes:'', line_items:[] };
+    let temp_file_path = null;
+    let parsed_fields  = { invoice_number:'', invoice_date:'', due_date:'', vendor_name:'', client_name:'', po_number_ref:'', currency:'PKR', tax_amount:'0', notes:'', line_items:[] };
 
-  // ── Upload to Supabase Storage ──
-  if (supabase) {
-    const tp = tempPath(file.originalname);
-    const { error: upErr } = await supabase.storage.from(BUCKET).upload(tp, file.buffer, {
-      contentType: file.mimetype,
-      upsert: false,
-    });
-    if (!upErr) temp_file_path = tp;
-    else console.warn('Supabase upload warning:', upErr.message);
-  }
-
-  // ── Extract text for PDFs ──
-  if (file.mimetype === 'application/pdf') {
-    try {
-      const pdfParse = require('pdf-parse');
-      const { text } = await pdfParse(file.buffer);
-      parsed_fields = parseInvoiceText(text);
-    } catch (err) {
-      console.warn('pdf-parse warning:', err.message);
+    // ── Upload to Supabase Storage (best-effort — extraction continues even if this fails) ──
+    if (supabase) {
+      try {
+        const tp = tempPath(file.originalname);
+        const { error: upErr } = await supabase.storage.from(BUCKET).upload(tp, file.buffer, {
+          contentType: file.mimetype,
+          upsert: false,
+        });
+        if (!upErr) temp_file_path = tp;
+        else console.warn('Supabase storage warning:', upErr.message);
+      } catch (storageErr) {
+        console.warn('Supabase storage exception:', storageErr.message);
+      }
     }
-  }
 
-  res.json({
-    parsed_fields,
-    temp_file_path,
-    file_name: file.originalname,
-    file_size: file.size,
-    file_type: file.mimetype,
-  });
+    // ── Extract text for PDFs ──
+    if (file.mimetype === 'application/pdf') {
+      try {
+        const pdfParse = require('pdf-parse');
+        const { text } = await pdfParse(file.buffer);
+        parsed_fields = parseInvoiceText(text);
+      } catch (err) {
+        console.warn('pdf-parse warning:', err.message);
+      }
+    }
+
+    res.json({
+      parsed_fields,
+      temp_file_path,
+      file_name: file.originalname,
+      file_size: file.size,
+      file_type: file.mimetype,
+    });
+  } catch (err) {
+    console.error('POST /invoices/parse error:', err);
+    res.status(500).json({ error: 'Server error', detail: err.message });
+  }
 });
 
 // ─── GET /  ───────────────────────────────────────────────────────────────────
