@@ -3,7 +3,7 @@ import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../lib/api';
 import { formatCurrency, formatDate, statusBadgeClass } from '../../lib/format';
-import { X, CheckCircle, AlertTriangle, Trash2, Paperclip, Pencil, Plus, AlertCircle } from 'lucide-react';
+import { X, CheckCircle, AlertTriangle, Trash2, Paperclip, Pencil, Plus } from 'lucide-react';
 import InvoiceFileViewer from '../../components/InvoiceFileViewer';
 
 const MODE_LABEL = { single: 'Single Wing', split: 'Split Between Wings', line_item: 'By Line Item' };
@@ -336,173 +336,6 @@ function EditInvoiceModal({ inv, wings, onClose, onSaved }) {
   );
 }
 
-// ─── Wave Review Modal ────────────────────────────────────────────────────────
-function WaveReviewModal({ inv, wings, onClose, onSaved }) {
-  const toast = useToast();
-  const { activeWing } = useAuth();
-  const [saving, setSaving]         = useState(false);
-  const [pos, setPos]               = useState([]);
-  const [wingMode, setWingMode]     = useState('single');
-  const [singleWingId, setSingleWingId] = useState(activeWing?.id || '');
-  const [splits, setSplits]         = useState([
-    { id: 1, wing_id: '', amount: '', pct: '' },
-    { id: 2, wing_id: '', amount: '', pct: '' },
-  ]);
-  const [poId, setPoId]             = useState('');
-
-  const total      = parseFloat(inv.total_amount || 0);
-  const splitTotal = splits.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
-  const splitValid = splits.length > 0 && Math.abs(splitTotal - total) < 0.02;
-
-  useEffect(() => {
-    const params = activeWing?.id ? { wing_id: activeWing.id } : {};
-    api.get('/purchase-orders', { params }).then(r => setPos(r.data)).catch(() => {});
-  }, [activeWing?.id]);
-
-  function updateSplit(id, field, val) {
-    setSplits(prev => prev.map(s => {
-      if (s.id !== id) return s;
-      const next = { ...s, [field]: val };
-      if (field === 'pct')    next.amount = total > 0 ? (parseFloat(val || 0) / 100 * total).toFixed(2) : '';
-      if (field === 'amount') next.pct    = total > 0 ? (parseFloat(val || 0) / total * 100).toFixed(2) : '';
-      return next;
-    }));
-  }
-
-  async function submit(e) {
-    e.preventDefault();
-    if (wingMode === 'single' && !singleWingId)
-      return toast('Please select a business wing', 'error');
-    if (wingMode === 'split' && !splitValid)
-      return toast(`Split amounts must sum to ${formatCurrency(total, inv.currency)}`, 'error');
-
-    setSaving(true);
-    try {
-      const wingBody = { wing_assignment_mode: wingMode };
-      if (wingMode === 'single') {
-        wingBody.wing_id = singleWingId;
-      } else {
-        wingBody.wing_splits = splits.filter(s => s.wing_id).map(s => ({
-          business_wing_id: s.wing_id,
-          split_percentage: parseFloat(s.pct),
-          split_amount:     parseFloat(s.amount),
-        }));
-      }
-      await api.patch(`/invoices/${inv.id}/wing-assignment`, wingBody);
-      await api.put(`/invoices/${inv.id}`, { po_id: poId || null, needs_review: false });
-
-      toast('Review completed', 'success');
-      onSaved();
-    } catch (err) {
-      toast(err.response?.data?.error || 'Error', 'error');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 600, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3>Review Invoice #{inv.invoice_number}</h3>
-          <button className="btn btn-secondary btn-sm" onClick={onClose}><X size={14}/></button>
-        </div>
-        <form onSubmit={submit} style={{ display: 'contents' }}>
-          <div className="modal-body" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
-
-            {/* Invoice summary */}
-            <div style={{ background: 'var(--bg)', borderRadius: 10, padding: '12px 16px', fontSize: 13 }}>
-              {[
-                ['Client',       inv.client_name || '—'],
-                ['Invoice Date', formatDate(inv.invoice_date)],
-                inv.due_date && ['Due Date', formatDate(inv.due_date)],
-              ].filter(Boolean).map(([l, v]) => (
-                <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span className="text-muted">{l}</span>
-                  <span>{v}</span>
-                </div>
-              ))}
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: 6, marginTop: 4 }}>
-                <span className="text-muted">Total</span>
-                <strong className="font-mono">{formatCurrency(inv.total_amount, inv.currency)}</strong>
-              </div>
-            </div>
-
-            {/* Wing assignment */}
-            <div>
-              <div style={{ fontWeight: 600, marginBottom: 10 }}>Assign to Business Wing *</div>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                {['single', 'split'].map(m => (
-                  <button key={m} type="button"
-                    className={`btn btn-sm ${wingMode === m ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => setWingMode(m)}>
-                    {m === 'single' ? 'Single Wing' : 'Split Between Wings'}
-                  </button>
-                ))}
-              </div>
-
-              {wingMode === 'single' && (
-                <select className="form-control" value={singleWingId} onChange={e => setSingleWingId(e.target.value)}>
-                  <option value="">— Select Wing —</option>
-                  {wings.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                </select>
-              )}
-
-              {wingMode === 'split' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.2fr auto', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>
-                    <span>Wing</span><span>Split %</span><span>Amount ({inv.currency})</span><span/>
-                  </div>
-                  {splits.map(s => (
-                    <div key={s.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.2fr auto', gap: 6, alignItems: 'center' }}>
-                      <select className="form-control" value={s.wing_id} onChange={e => updateSplit(s.id, 'wing_id', e.target.value)}>
-                        <option value="">— Wing —</option>
-                        {wings.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                      </select>
-                      <input type="number" step="0.01" className="form-control" placeholder="%" value={s.pct} onChange={e => updateSplit(s.id, 'pct', e.target.value)}/>
-                      <input type="number" step="0.01" className="form-control" placeholder="Amount" value={s.amount} onChange={e => updateSplit(s.id, 'amount', e.target.value)}/>
-                      {splits.length > 2
-                        ? <button type="button" className="btn btn-secondary btn-sm" style={{ padding: '6px 8px' }} onClick={() => setSplits(p => p.filter(r => r.id !== s.id))}><X size={12}/></button>
-                        : <div/>}
-                    </div>
-                  ))}
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <button type="button" className="btn btn-secondary btn-sm"
-                      onClick={() => setSplits(p => [...p, { id: Date.now(), wing_id: '', pct: '', amount: '' }])}>
-                      <Plus size={12}/> Add Wing
-                    </button>
-                    {total > 0 && (
-                      <span style={{ fontSize: 12, color: splitValid ? 'var(--success)' : 'var(--danger)' }}>
-                        Allocated {formatCurrency(splitTotal, inv.currency)} of {formatCurrency(total, inv.currency)}
-                        {splitValid ? ' ✓' : ''}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* PO Link */}
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label">Link to Purchase Order (optional)</label>
-              <select className="form-control" value={poId} onChange={e => setPoId(e.target.value)}>
-                <option value="">— No PO —</option>
-                {pos.map(p => <option key={p.id} value={p.id}>PO #{p.po_number} · {formatCurrency(p.po_value, p.currency)}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="modal-footer">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? 'Saving…' : 'Complete Review'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
 // ─── Receive Modal ────────────────────────────────────────────────────────────
 function ReceiveModal({ invoice, wings, onClose, onSaved }) {
   const toast = useToast();
@@ -576,7 +409,6 @@ export default function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) 
   const [inv, setInv]                   = useState(null);
   const [receiveModal, setReceive]      = useState(false);
   const [editOpen, setEditOpen]         = useState(false);
-  const [reviewOpen, setReviewOpen]     = useState(false);
   const [updating, setUpdating]         = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting]         = useState(false);
@@ -704,21 +536,6 @@ export default function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) 
           </div>
 
           <div className="modal-body" style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:20 }}>
-
-            {/* ── Wave review banner ── */}
-            {inv.needs_review && (
-              <div style={{ background: 'var(--warning-light)', border: '1px solid var(--warning-text)', borderRadius: 8, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-                  <AlertCircle size={16} color="var(--warning-text)"/>
-                  <div>
-                    <strong>Review Required</strong> — Imported from Wave. Assign a business wing and optionally link a PO to complete setup.
-                  </div>
-                </div>
-                <button className="btn btn-primary btn-sm" onClick={() => setReviewOpen(true)} style={{ whiteSpace: 'nowrap' }}>
-                  Complete Review
-                </button>
-              </div>
-            )}
 
             {/* ── SECTION 1: Header ── */}
             <section>
@@ -932,14 +749,6 @@ export default function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) 
         />
       )}
 
-      {reviewOpen && (
-        <WaveReviewModal
-          inv={inv}
-          wings={wings}
-          onClose={() => setReviewOpen(false)}
-          onSaved={() => { setReviewOpen(false); load(); onRefresh(); }}
-        />
-      )}
     </>
   );
 }
