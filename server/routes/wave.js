@@ -33,15 +33,15 @@ const INVOICES_QUERY = `
             invoiceDate
             dueDate
             memo
-            total      { raw currency { code } }
-            amountDue  { raw }
+            total      { value currency { code } }
+            amountDue  { value }
             customer   { name email }
             items {
               description
               quantity
               unitPrice
-              subtotal { raw }
-              taxes { amount { raw } salesTax { name rate } }
+              subtotal { value }
+              taxes { amount { value } salesTax { name rate } }
             }
           }
         }
@@ -124,12 +124,12 @@ router.post('/sync', async (req, res) => {
         description: item.description || '',
         quantity:    parseFloat(item.quantity)      || 1,
         unit_price:  parseFloat(item.unitPrice)     || 0,
-        amount:      parseFloat(item.subtotal?.raw) || 0,
+        amount:      parseFloat(item.subtotal?.value) || 0,
         notes: '',
       }));
 
       const taxAmount = (wi.items || []).reduce((sum, item) =>
-        sum + (item.taxes || []).reduce((s, t) => s + parseFloat(t.amount?.raw || 0), 0), 0);
+        sum + (item.taxes || []).reduce((s, t) => s + parseFloat(t.amount?.value || 0), 0), 0);
 
       await db('wave_invoice_staging').insert({
         wave_invoice_id: wi.id,
@@ -139,7 +139,7 @@ router.post('/sync', async (req, res) => {
         invoice_date:    wi.invoiceDate   || new Date().toISOString().split('T')[0],
         due_date:        wi.dueDate       || null,
         currency:        wi.total?.currency?.code || 'USD',
-        total_amount:    parseFloat(wi.total?.raw || 0),
+        total_amount:    parseFloat(wi.total?.value || 0),
         tax_amount:      taxAmount,
         line_items:      JSON.stringify(lineItems),
         notes:           wi.memo || null,
