@@ -280,16 +280,14 @@ router.delete('/:id', async (req, res) => {
 router.post('/migrate-statuses', async (req, res) => {
   try {
     // half_day with both times → short_hours (<8h) or present (≥8h)
+    // check_in/check_out are TIME columns; subtract gives interval, epoch gives seconds
     const r1 = await db.raw(`
       UPDATE attendance_records
       SET status = CASE
-        WHEN (
-          (SPLIT_PART(check_out,':',1)::int * 60 + SPLIT_PART(check_out,':',2)::int) -
-          (SPLIT_PART(check_in, ':',1)::int * 60 + SPLIT_PART(check_in, ':',2)::int)
-        ) >= 480 THEN 'present'
+        WHEN EXTRACT(EPOCH FROM (check_out - check_in)) / 60 >= 480 THEN 'present'
         ELSE 'short_hours'
       END
-      WHERE status = 'half_day'
+      WHERE status    = 'half_day'
         AND check_in  IS NOT NULL
         AND check_out IS NOT NULL
     `);

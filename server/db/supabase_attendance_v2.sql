@@ -12,12 +12,10 @@
 -- ════════════════════════════════════════════════════════════════════════
 
 -- Step 1 — reclassify half_day records that have both times recorded
+-- check_in/check_out are TIME columns; subtract to get an interval, then extract minutes
 UPDATE attendance_records
 SET status = CASE
-  WHEN (
-    (SPLIT_PART(check_out, ':', 1)::int * 60 + SPLIT_PART(check_out, ':', 2)::int) -
-    (SPLIT_PART(check_in,  ':', 1)::int * 60 + SPLIT_PART(check_in,  ':', 2)::int)
-  ) >= 480 THEN 'present'
+  WHEN EXTRACT(EPOCH FROM (check_out - check_in)) / 60 >= 480 THEN 'present'
   ELSE 'short_hours'
 END
 WHERE status    = 'half_day'
