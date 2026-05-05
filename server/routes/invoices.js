@@ -64,17 +64,34 @@ function parseInvoiceText(text) {
   }
   function parseDate(str) {
     if (!str) return '';
+    // "May 4, 2026" or "August 2 2026" (Month Day Year)
+    const m3 = str.match(/([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/i);
+    if (m3) { const mo = months[m3[1].slice(0,3).toLowerCase()]; if (mo) return `${m3[3]}-${String(mo).padStart(2,'0')}-${String(m3[2]).padStart(2,'0')}`; }
+    // "2 August 2026" or "2nd August 2026" (Day Month Year)
     const m1 = str.match(/(\d{1,2})(?:st|nd|rd|th)?\s+(\w+)\s+(\d{4})/i);
-    if (m1) { const mo = months[m1[2].slice(0,3).toLowerCase()]; if (mo) return `${m1[3]}-${String(mo).padStart(2,'0')}-${m1[1].padStart(2,'0')}`; }
+    if (m1) { const mo = months[m1[2].slice(0,3).toLowerCase()]; if (mo) return `${m1[3]}-${String(mo).padStart(2,'0')}-${String(m1[1]).padStart(2,'0')}`; }
+    // "02/08/2026" or "02-08-2026" (dd/mm/yyyy)
     const m2 = str.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
     if (m2) return `${m2[3]}-${m2[2].padStart(2,'0')}-${m2[1].padStart(2,'0')}`;
+    // ISO "2026-05-04"
+    const m4 = str.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m4) return `${m4[1]}-${m4[2]}-${m4[3]}`;
     return '';
   }
   function cleanNum(s) { return parseFloat(String(s||'').replace(/,/g,''))||0; }
 
   const invoice_number = get([/invoice\s*(?:no\.?|number|#)\s*[:\-]?\s*([A-Z0-9\-]+)/i, /\binv[oice]*\s*#?\s*[:\-]?\s*([0-9]+)/i]);
-  const invoice_date   = parseDate(get([/(?:invoice\s+)?date\s*[:\-]\s*([^\n\r]+)/i, /dated?\s*[:\-]\s*([^\n\r]+)/i]));
-  const due_date       = parseDate(get([/due\s+date\s*[:\-]\s*([^\n\r]+)/i, /payment\s+due\s*[:\-]\s*([^\n\r]+)/i]));
+  const invoice_date   = parseDate(get([
+    /invoice\s+date\s*[:\-]\s*([^\n\r]+)/i,
+    /(?:invoice\s+)?date\s*[:\-]\s*([^\n\r]+)/i,
+    /dated?\s*[:\-]\s*([^\n\r]+)/i,
+  ]));
+  const due_date       = parseDate(get([
+    /payment\s+due\s*[:\-]\s*([^\n\r]+)/i,
+    /payment\s+due\s+date\s*[:\-]\s*([^\n\r]+)/i,
+    /due\s+date\s*[:\-]\s*([^\n\r]+)/i,
+    /due\s*[:\-]\s*([^\n\r]+)/i,
+  ]));
   const vendor_name    = get([/(?:from|issued\s+by|billed\s+by)\s*[:\-]\s*([^\n\r]+)/i]);
   const client_name    = get([/bill(?:ed)?\s+to\s*[:\-]?\s*([^\n\r]+)/i, /(?:to|attn\.?)\s*[:\-]\s*([^\n\r]+)/i]);
   const po_number_ref  = get([/(?:po|purchase\s*order)\s*(?:no\.?|number|#)?\s*[:\-]?\s*([A-Z0-9\-]+)/i]);
