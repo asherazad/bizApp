@@ -373,13 +373,16 @@ function StepReview({ form, setForm, lineItems, setLineItems, clients }) {
 
 // ─── Step 3 — Link PO ─────────────────────────────────────────────────────────
 function StepPO({ form, totalAmount, currency, exchRate, selectedPO, setSelectedPO }) {
+  const { activeWing } = useAuth();
   const [query, setQuery]   = useState('');
   const [allPos, setAllPos] = useState([]);
   const [invoiced, setInvoiced] = useState(0);
 
   useEffect(() => {
-    api.get('/purchase-orders').then(r => setAllPos(r.data)).catch(() => {});
-  }, []);
+    const params = {};
+    if (activeWing?.id) params.wing_id = activeWing.id;
+    api.get('/purchase-orders', { params }).then(r => setAllPos(r.data)).catch(() => {});
+  }, [activeWing?.id]);
 
   useEffect(() => {
     if (!selectedPO) { setInvoiced(0); return; }
