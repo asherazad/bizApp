@@ -764,8 +764,22 @@ function ResourceView({ wing }) {
 // ══════════════════════════════════════════════════════════════════════════════
 export default function Attendance() {
   const { activeWing } = useAuth();
-  const [tab, setTab]  = useState('daily');
-  const [importKey, setImportKey] = useState(0); // bumped after import to refresh active tab
+  const toast = useToast();
+  const [tab,       setTab]       = useState('daily');
+  const [importKey, setImportKey] = useState(0);
+  const [migrating, setMigrating] = useState(false);
+
+  async function migrateStatuses() {
+    if (!window.confirm('This will reclassify all legacy "half_day" and "leave" records to the new status scheme. Continue?')) return;
+    setMigrating(true);
+    try {
+      const { data } = await api.post('/attendance/migrate-statuses');
+      toast(data.message, 'success');
+      setImportKey(k => k + 1);
+    } catch (err) {
+      toast(err.response?.data?.error || 'Migration failed', 'error');
+    } finally { setMigrating(false); }
+  }
 
   const TABS = [
     { id: 'daily',    label: 'Daily View'    },
@@ -778,6 +792,10 @@ export default function Attendance() {
       <div className="page-header">
         <h1>Attendance</h1>
         {activeWing && <span className="badge badge-navy">{activeWing.name}</span>}
+        <button className="btn btn-secondary" onClick={migrateStatuses} disabled={migrating}
+          title="Reclassify legacy half_day / leave records to new status scheme">
+          {migrating ? 'Migrating…' : 'Migrate Statuses'}
+        </button>
         <ImportButton onImported={() => setImportKey(k => k + 1)} />
       </div>
 

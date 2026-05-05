@@ -276,6 +276,44 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// ─── POST /migrate-statuses — one-time migration to new status scheme ────────
+router.post('/migrate-statuses', async (req, res) => {
+  try {
+    // half_day with both times → short_hours (<8h) or present (≥8h)
+    const r1 = await db.raw(`
+      UPDATE attendance_records
+      SET status = CASE
+        WHEN (
+          (SPLIT_PART(check_out,':',1)::int * 60 + SPLIT_PART(check_out,':',2)::int) -
+          (SPLIT_PART(check_in, ':',1)::int * 60 + SPLIT_PART(check_in, ':',2)::int)
+        ) >= 480 THEN 'present'
+        ELSE 'short_hours'
+      END
+      WHERE status = 'half_day'
+        AND check_in  IS NOT NULL
+        AND check_out IS NOT NULL
+    `);
+
+    // leave with no punch → absent
+    const r2 = await db.raw(`
+      UPDATE attendance_records
+      SET status = 'absent'
+      WHERE status   = 'leave'
+        AND check_in  IS NULL
+        AND check_out IS NULL
+    `);
+
+    res.json({
+      message: `Migration complete — ${r1.rowCount} half_day records reclassified, ${r2.rowCount} leave records marked absent`,
+      half_day_reclassified: r1.rowCount,
+      leave_to_absent:       r2.rowCount,
+    });
+  } catch (err) {
+    console.error('POST /attendance/migrate-statuses', err);
+    res.status(500).json({ error: 'Migration failed', detail: err.message });
+  }
+});
+
 // ─── GET /leave-balances — must stay AFTER specific named routes ──────────────
 router.get('/leave-balances', async (req, res) => {
   try {
