@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
 import api from '../../lib/api';
 import { extractFromPDF } from '../../lib/pdfExtract';
 import { formatCurrency, formatDate } from '../../lib/format';
@@ -270,22 +271,22 @@ function StepReview({ form, setForm, lineItems, setLineItems, clients }) {
           <input className="form-control" required value={form.invoice_number} onChange={f('invoice_number')} placeholder="e.g. 1223"/>
         </div>
         <div className="form-group">
-          <label className="form-label">Vendor (From)</label>
+          <label className="form-label">Client</label>
           <SearchSelect
             value={form.vendor_name}
             onChange={v => setForm(p => ({ ...p, vendor_name: v }))}
             options={(clients||[]).map(c => c.name)}
-            placeholder="Select or type vendor name"
+            placeholder="Select or type client name"
           />
         </div>
       </div>
       <div className="form-group">
-        <label className="form-label">Client / Bill To</label>
+        <label className="form-label">Bill To</label>
         <SearchSelect
           value={form.client_name}
           onChange={v => setForm(p => ({ ...p, client_name: v }))}
           options={(clients||[]).map(c => c.name)}
-          placeholder="Select or type client name"
+          placeholder="Select or type bill-to name"
         />
       </div>
       <div className="grid-2">
@@ -750,6 +751,7 @@ function StepConfirm({ form, lineItems, selectedPO, wings, wingMode, singleWingI
 // ─── Main Wizard ──────────────────────────────────────────────────────────────
 export default function InvoiceWizard({ wings, mode = 'import', onClose, onSaved }) {
   const toast = useToast();
+  const { activeWing } = useAuth();
 
   const autoSingleWing = wings.length === 1 ? wings[0] : null;
   const startStep = mode === 'import' ? 1 : 2;
@@ -764,8 +766,10 @@ export default function InvoiceWizard({ wings, mode = 'import', onClose, onSaved
   const [clients, setClients] = useState([]);
 
   useEffect(() => {
-    api.get('/clients').then(r => setClients(r.data)).catch(() => {});
-  }, []);
+    const params = {};
+    if (activeWing?.id) params.wing_id = activeWing.id;
+    api.get('/clients', { params }).then(r => setClients(r.data)).catch(() => {});
+  }, [activeWing?.id]);
 
   // Step 1 state (file upload)
   const [uploadedFile, setUploadedFile] = useState(null); // { temp_file_path, file_name, file_size, file_type }
@@ -774,7 +778,7 @@ export default function InvoiceWizard({ wings, mode = 'import', onClose, onSaved
   const [form, setForm] = useState({
     invoice_number: '', vendor_name: '', client_name: '',
     invoice_date: today(), due_date: '', currency: 'PKR', exchange_rate: '1',
-    tax_amount: '0', notes: '',
+    tax_rate: '', tax_amount: '0', notes: '',
   });
   const [lineItems, setLineItems] = useState([{ ...EMPTY_ITEM }]);
 
@@ -795,20 +799,33 @@ export default function InvoiceWizard({ wings, mode = 'import', onClose, onSaved
   const exchRate    = parseFloat(form.exchange_rate||1);
 
   function onExtracted(data) {
+    const items = data.line_items?.length
+      ? data.line_items.map(i => ({ ...EMPTY_ITEM, ...i, business_wing_id: '' }))
+      : [{ ...EMPTY_ITEM }];
+
+    const taxAmount  = parseFloat(data.tax_amount || 0);
+    const subtotal   = items.reduce((s, i) => s + parseFloat(i.amount || 0), 0);
+    const KNOWN_RATES = [0, 5, 10, 15, 16, 17, 20];
+    let inferredRate = data.tax_rate ? String(data.tax_rate) : '';
+    if (!inferredRate && taxAmount > 0 && subtotal > 0) {
+      const pct = taxAmount / subtotal * 100;
+      const match = KNOWN_RATES.find(r => Math.abs(r - pct) < 0.5);
+      if (match !== undefined) inferredRate = String(match);
+    }
+
     setForm({
       invoice_number: data.invoice_number || '',
       vendor_name:    data.vendor_name    || '',
       client_name:    data.client_name    || '',
       invoice_date:   data.invoice_date   || today(),
-      due_date:       data.due_date       || '',
+      due_date:       data.due_date       || data.payment_date || '',
       currency:       data.currency       || 'PKR',
       exchange_rate:  '1',
+      tax_rate:       inferredRate,
       tax_amount:     data.tax_amount     || '0',
       notes:          data.notes          || '',
     });
-    if (data.line_items?.length) {
-      setLineItems(data.line_items.map(i => ({ ...EMPTY_ITEM, ...i, business_wing_id: '' })));
-    }
+    setLineItems(items);
     setStep(2);
   }
 
