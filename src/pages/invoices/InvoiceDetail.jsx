@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
 import api from '../../lib/api';
 import { formatCurrency, formatDate, statusBadgeClass } from '../../lib/format';
 import { X, CheckCircle, AlertTriangle, Trash2, Paperclip, Pencil, Plus } from 'lucide-react';
@@ -16,10 +17,56 @@ function calcItem(item, key, val) {
   return next;
 }
 
+// ─── Searchable client dropdown ───────────────────────────────────────────────
+function ClientSelect({ value, onChange, clients, placeholder }) {
+  const [query, setQuery] = useState(value || '');
+  const [open, setOpen]   = useState(false);
+  const ref               = useRef(null);
+
+  useEffect(() => { setQuery(value || ''); }, [value]);
+  useEffect(() => {
+    function h(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  const filtered = clients.filter(c => c.name.toLowerCase().includes(query.toLowerCase()));
+
+  function select(name) { onChange(name); setQuery(name); setOpen(false); }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <input className="form-control" value={query} placeholder={placeholder}
+        onChange={e => { setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+      />
+      {open && filtered.length > 0 && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, boxShadow: '0 4px 16px rgba(0,0,0,.12)', maxHeight: 180, overflowY: 'auto', marginTop: 2 }}>
+          {filtered.map(c => (
+            <div key={c.id} onMouseDown={() => select(c.name)}
+              style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, background: c.name === value ? 'var(--electric-light)' : undefined }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-secondary)'}
+              onMouseLeave={e => e.currentTarget.style.background = c.name === value ? 'var(--electric-light)' : ''}
+            >{c.name}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Edit Modal ───────────────────────────────────────────────────────────────
-function EditInvoiceModal({ inv, onClose, onSaved }) {
+function EditInvoiceModal({ inv, wings, onClose, onSaved }) {
   const toast = useToast();
-  const [saving, setSaving] = useState(false);
+  const { activeWing } = useAuth();
+  const [saving, setSaving]   = useState(false);
+  const [clients, setClients] = useState([]);
+
+  useEffect(() => {
+    const params = {};
+    if (activeWing?.id) params.wing_id = activeWing.id;
+    api.get('/clients', { params }).then(r => setClients(r.data)).catch(() => {});
+  }, [activeWing?.id]);
 
   const initItems = (() => {
     try { return Array.isArray(inv.line_items) ? inv.line_items : JSON.parse(inv.line_items || '[]'); }
@@ -30,42 +77,90 @@ function EditInvoiceModal({ inv, onClose, onSaved }) {
     invoice_number: inv.invoice_number || '',
     vendor_name:    inv.vendor_name    || '',
     client_name:    inv.client_name    || '',
-    invoice_date:   inv.invoice_date?.split('T')[0]  || '',
-    due_date:       inv.due_date?.split('T')[0]       || '',
-    currency:       inv.currency       || 'PKR',
-    exchange_rate:  inv.exchange_rate  || '1',
+    invoice_date:   inv.invoice_date?.split('T')[0] || '',
+    due_date:       inv.due_date?.split('T')[0]      || '',
+    currency:       inv.currency      || 'PKR',
+    exchange_rate:  inv.exchange_rate || '1',
     tax_rate:       '',
-    tax_amount:     inv.tax_amount     || '0',
-    notes:          inv.notes          || '',
+    tax_amount:     inv.tax_amount    || '0',
+    notes:          inv.notes         || '',
   });
-  const [lineItems, setLineItems] = useState(
-    initItems.length ? initItems : [{ ...EMPTY_ITEM }]
-  );
+  const [lineItems, setLineItems] = useState(initItems.length ? initItems : [{ ...EMPTY_ITEM }]);
+
+  // ── Wing split state ──
+  const currentMode   = inv.wing_assignment_mode || 'single';
+  const [wingMode, setWingMode]       = useState(currentMode);
+  const [singleWingId, setSingleWingId] = useState(inv.business_wing_id || '');
+  const [splits, setSplits] = useState(() => {
+    if (inv.wing_splits?.length) {
+      return inv.wing_splits.map(s => ({
+        id:       s.business_wing_id,
+        wing_id:  s.business_wing_id,
+        amount:   String(s.split_amount || ''),
+        pct:      String(s.split_percentage || ''),
+      }));
+    }
+    return [
+      { id: 1, wing_id: '', amount: '', pct: '' },
+      { id: 2, wing_id: '', amount: '', pct: '' },
+    ];
+  });
 
   function f(k) { return e => setForm(p => ({ ...p, [k]: e.target.value })); }
   function setItem(i, key, val) { setLineItems(p => p.map((it, idx) => idx === i ? calcItem(it, key, val) : it)); }
   function addItem()     { setLineItems(p => [...p, { ...EMPTY_ITEM }]); }
   function removeItem(i) { setLineItems(p => p.filter((_, idx) => idx !== i)); }
 
-  const subtotal = lineItems.reduce((s, i) => s + parseFloat(i.amount || 0), 0);
-  const taxAmt   = parseFloat(form.tax_amount || 0);
-  const total    = subtotal + taxAmt;
+  const subtotal   = lineItems.reduce((s, i) => s + parseFloat(i.amount || 0), 0);
+  const taxAmt     = parseFloat(form.tax_amount || 0);
+  const total      = subtotal + taxAmt;
+  const splitTotal = splits.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
+  const splitValid = splits.length > 0 && Math.abs(splitTotal - total) < 0.02;
+
+  function updateSplit(id, field, val) {
+    setSplits(prev => prev.map(s => {
+      if (s.id !== id) return s;
+      const next = { ...s, [field]: val };
+      if (field === 'pct')    next.amount = total > 0 ? (parseFloat(val || 0) / 100 * total).toFixed(2) : '';
+      if (field === 'amount') next.pct    = total > 0 ? (parseFloat(val || 0) / total * 100).toFixed(2) : '';
+      return next;
+    }));
+  }
 
   async function submit(e) {
-    e.preventDefault(); setSaving(true);
+    e.preventDefault();
+    if (wingMode === 'split' && !splitValid)
+      return toast(`Split amounts must sum to ${formatCurrency(total, form.currency)}`, 'error');
+
+    setSaving(true);
     try {
+      // 1 — update fields + line items
       await api.put(`/invoices/${inv.id}`, {
         invoice_number: form.invoice_number,
-        vendor_name:    form.vendor_name    || null,
-        client_name:    form.client_name    || null,
+        vendor_name:    form.vendor_name  || null,
+        client_name:    form.client_name  || null,
         invoice_date:   form.invoice_date,
-        due_date:       form.due_date       || null,
+        due_date:       form.due_date     || null,
         currency:       form.currency,
         exchange_rate:  parseFloat(form.exchange_rate) || 1,
         tax_amount:     parseFloat(form.tax_amount)    || 0,
         line_items:     lineItems,
-        notes:          form.notes          || null,
+        notes:          form.notes        || null,
       });
+
+      // 2 — update wing assignment
+      const wingBody = { wing_assignment_mode: wingMode };
+      if (wingMode === 'single') {
+        wingBody.wing_id = singleWingId;
+      } else if (wingMode === 'split') {
+        wingBody.wing_splits = splits.filter(s => s.wing_id).map(s => ({
+          business_wing_id: s.wing_id,
+          split_percentage: parseFloat(s.pct),
+          split_amount:     parseFloat(s.amount),
+        }));
+      }
+      await api.patch(`/invoices/${inv.id}/wing-assignment`, wingBody);
+
       toast('Invoice updated', 'success');
       onSaved();
     } catch (err) { toast(err.response?.data?.error || 'Error', 'error'); }
@@ -82,6 +177,7 @@ function EditInvoiceModal({ inv, onClose, onSaved }) {
         <form onSubmit={submit} style={{ display: 'contents' }}>
           <div className="modal-body" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
+            {/* ── Basic fields ── */}
             <div className="grid-2">
               <div className="form-group">
                 <label className="form-label">Invoice # *</label>
@@ -89,13 +185,13 @@ function EditInvoiceModal({ inv, onClose, onSaved }) {
               </div>
               <div className="form-group">
                 <label className="form-label">Client</label>
-                <input className="form-control" value={form.vendor_name} onChange={f('vendor_name')} placeholder="Client name"/>
+                <ClientSelect value={form.vendor_name} onChange={v => setForm(p => ({ ...p, vendor_name: v }))} clients={clients} placeholder="Select or type client"/>
               </div>
             </div>
 
             <div className="form-group">
               <label className="form-label">Bill To</label>
-              <input className="form-control" value={form.client_name} onChange={f('client_name')} placeholder="Bill-to name"/>
+              <ClientSelect value={form.client_name} onChange={v => setForm(p => ({ ...p, client_name: v }))} clients={clients} placeholder="Select or type bill-to"/>
             </div>
 
             <div className="grid-2">
@@ -126,8 +222,7 @@ function EditInvoiceModal({ inv, onClose, onSaved }) {
                 <label className="form-label">Tax Rate</label>
                 <select className="form-control" value={form.tax_rate} onChange={e => {
                   const rate = e.target.value;
-                  const computed = rate ? (subtotal * parseFloat(rate) / 100).toFixed(2) : form.tax_amount;
-                  setForm(p => ({ ...p, tax_rate: rate, tax_amount: computed }));
+                  setForm(p => ({ ...p, tax_rate: rate, tax_amount: rate ? (subtotal * parseFloat(rate) / 100).toFixed(2) : p.tax_amount }));
                 }}>
                   <option value="">Custom</option>
                   {[0, 5, 10, 15, 16, 17, 20].map(r => <option key={r} value={r}>{r}%</option>)}
@@ -140,18 +235,18 @@ function EditInvoiceModal({ inv, onClose, onSaved }) {
               </div>
             </div>
 
-            {/* Line items */}
+            {/* ── Line items ── */}
             <div>
               <div style={{ fontWeight: 600, marginBottom: 8 }}>Line Items</div>
               {lineItems.map((it, i) => (
                 <div key={i} style={{ display: 'grid', gridTemplateColumns: '2.5fr 0.8fr 1fr 1fr auto', gap: 6, marginBottom: 8, alignItems: 'start' }}>
                   <div>
-                    <input className="form-control" placeholder="Description *" value={it.description} onChange={e => setItem(i, 'description', e.target.value)}/>
-                    <input className="form-control" placeholder="Notes (optional)" value={it.notes || ''} style={{ marginTop: 4, fontSize: 12 }} onChange={e => setItem(i, 'notes', e.target.value)}/>
+                    <input className="form-control" placeholder="Description" value={it.description} onChange={e => setItem(i, 'description', e.target.value)}/>
+                    <input className="form-control" placeholder="Notes" value={it.notes || ''} style={{ marginTop: 4, fontSize: 12 }} onChange={e => setItem(i, 'notes', e.target.value)}/>
                   </div>
-                  <input type="number" step="0.001" className="form-control" placeholder="Qty" value={it.quantity} onChange={e => setItem(i, 'quantity', e.target.value)}/>
-                  <input type="number" step="0.01" className="form-control" placeholder="Rate" value={it.unit_price} onChange={e => setItem(i, 'unit_price', e.target.value)}/>
-                  <input type="number" step="0.01" className="form-control" placeholder="Amount" value={it.amount} onChange={e => setItem(i, 'amount', e.target.value)}/>
+                  <input type="number" step="0.001" className="form-control" placeholder="Qty"    value={it.quantity}   onChange={e => setItem(i, 'quantity',   e.target.value)}/>
+                  <input type="number" step="0.01"  className="form-control" placeholder="Rate"   value={it.unit_price} onChange={e => setItem(i, 'unit_price', e.target.value)}/>
+                  <input type="number" step="0.01"  className="form-control" placeholder="Amount" value={it.amount}     onChange={e => setItem(i, 'amount',     e.target.value)}/>
                   {lineItems.length > 1
                     ? <button type="button" className="btn btn-secondary btn-sm" style={{ padding: '6px 8px' }} onClick={() => removeItem(i)}><X size={12}/></button>
                     : <div/>}
@@ -160,7 +255,7 @@ function EditInvoiceModal({ inv, onClose, onSaved }) {
               <button type="button" className="btn btn-secondary btn-sm" onClick={addItem}><Plus size={12}/> Add Line</button>
             </div>
 
-            {/* Totals */}
+            {/* ── Totals ── */}
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <div style={{ minWidth: 260, background: 'var(--bg)', borderRadius: 10, padding: '12px 16px', fontSize: 13 }}>
                 {[['Subtotal', subtotal, false], ['Tax', taxAmt, false], ['Total', total, true]].map(([l, v, b]) => (
@@ -170,6 +265,60 @@ function EditInvoiceModal({ inv, onClose, onSaved }) {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* ── Wing assignment ── */}
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 10 }}>Wing Assignment</div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                {['single', 'split'].map(m => (
+                  <button key={m} type="button"
+                    className={`btn btn-sm ${wingMode === m ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setWingMode(m)}
+                  >
+                    {m === 'single' ? 'Single Wing' : 'Split Between Wings'}
+                  </button>
+                ))}
+              </div>
+
+              {wingMode === 'single' && (
+                <select className="form-control" value={singleWingId} onChange={e => setSingleWingId(e.target.value)}>
+                  <option value="">— Select Wing —</option>
+                  {wings.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                </select>
+              )}
+
+              {wingMode === 'split' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.2fr auto', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>
+                    <span>Wing</span><span>Split %</span><span>Amount ({form.currency})</span><span/>
+                  </div>
+                  {splits.map(s => (
+                    <div key={s.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.2fr auto', gap: 6, alignItems: 'center' }}>
+                      <select className="form-control" value={s.wing_id} onChange={e => updateSplit(s.id, 'wing_id', e.target.value)}>
+                        <option value="">— Wing —</option>
+                        {wings.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                      </select>
+                      <input type="number" step="0.01" className="form-control" placeholder="%" value={s.pct} onChange={e => updateSplit(s.id, 'pct', e.target.value)}/>
+                      <input type="number" step="0.01" className="form-control" placeholder="Amount" value={s.amount} onChange={e => updateSplit(s.id, 'amount', e.target.value)}/>
+                      {splits.length > 2
+                        ? <button type="button" className="btn btn-secondary btn-sm" style={{ padding: '6px 8px' }} onClick={() => setSplits(p => p.filter(r => r.id !== s.id))}><X size={12}/></button>
+                        : <div/>}
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSplits(p => [...p, { id: Date.now(), wing_id: '', pct: '', amount: '' }])}>
+                      <Plus size={12}/> Add Wing
+                    </button>
+                    {total > 0 && (
+                      <span style={{ fontSize: 12, color: splitValid ? 'var(--success)' : 'var(--danger)' }}>
+                        Allocated {formatCurrency(splitTotal, form.currency)} of {formatCurrency(total, form.currency)}
+                        {splitValid ? ' ✓' : ''}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="form-group">
