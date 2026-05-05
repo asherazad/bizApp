@@ -145,7 +145,6 @@ export default function Invoices() {
             <thead>
               <tr>
                 <th>Invoice #</th>
-                <th>Vendor</th>
                 <th>Client</th>
                 <th>Wings</th>
                 <th>Date</th>
@@ -159,13 +158,12 @@ export default function Invoices() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={11} className="text-muted" style={{ textAlign: 'center', padding: 32 }}>Loading…</td></tr>
+                <tr><td colSpan={10} className="text-muted" style={{ textAlign: 'center', padding: 32 }}>Loading…</td></tr>
               ) : displayed.length === 0 ? (
-                <tr><td colSpan={11} className="text-muted" style={{ textAlign: 'center', padding: 32 }}>No invoices found</td></tr>
+                <tr><td colSpan={10} className="text-muted" style={{ textAlign: 'center', padding: 32 }}>No invoices found</td></tr>
               ) : displayed.map(inv => (
                 <tr key={inv.id} style={{ cursor: 'pointer' }} onClick={() => setModal(inv.id)}>
                   <td style={{ fontWeight: 600 }}>{inv.invoice_number}</td>
-                  <td style={{ fontSize: 13 }}>{inv.vendor_name || <span className="text-muted">—</span>}</td>
                   <td style={{ fontSize: 13, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.client_name || <span className="text-muted">—</span>}</td>
                   <td><WingBadges inv={inv}/></td>
                   <td className="text-muted" style={{ fontSize: 12 }}>{formatDate(inv.invoice_date)}</td>
@@ -176,18 +174,10 @@ export default function Invoices() {
                   </td>
                   <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{inv.po_number || '—'}</td>
                   <td><span className={`badge ${statusBadgeClass(inv.status?.toLowerCase())}`}>{inv.status}</span></td>
-                  <td onClick={e => e.stopPropagation()}>
-                    {inv.has_file ? (
-                      <InvoiceFileViewer
-                        invoiceId={inv.id}
-                        fileName={inv.source_file_name}
-                        fileType={inv.source_file_type}
-                        fileSize={inv.source_file_size}
-                        trigger="icon"
-                      />
-                    ) : (
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
-                    )}
+                  <td>
+                    <span className={`badge ${inv.has_file ? 'badge-success' : 'badge-neutral'}`}>
+                      {inv.has_file ? 'Yes' : 'No'}
+                    </span>
                   </td>
                   <td onClick={e => e.stopPropagation()}>
                     <button className="btn btn-secondary btn-sm" style={{ padding: '4px 8px' }} onClick={() => setModal(inv.id)}>
