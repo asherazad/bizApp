@@ -9,7 +9,7 @@
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "functions": {
-    "api/index.js": { "maxDuration": 30 }
+    "api/index.js": { "maxDuration": 60 }
   },
   "env": { "NODE_ENV": "production" }
 }

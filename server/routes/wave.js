@@ -74,29 +74,49 @@ router.get('/staging', async (req, res) => {
   }
 });
 
-// POST /wave/sync — fetch from Wave, upsert into staging table only
+// POST /wave/sync — fetch ONE page from Wave per call to avoid gateway timeouts.
+// Frontend loops through pages automatically when has_more=true.
 router.post('/sync', async (req, res) => {
   if (!WAVE_TOKEN() || !WAVE_BIZ_ID())
     return res.status(500).json({ error: 'WAVE_API_TOKEN and WAVE_BUSINESS_ID env vars are required' });
 
-  try {
-    let page = 1, totalPages = 1;
-    const allWaveInvoices = [];
+  const page = parseInt(req.body.page || req.query.page || 1, 10);
 
-    while (page <= totalPages) {
-      const data = await waveQuery(INVOICES_QUERY, { businessId: WAVE_BIZ_ID(), page });
-      const { invoices } = data.business;
-      totalPages = invoices.pageInfo.totalPages || 1;
-      allWaveInvoices.push(...invoices.edges.map(e => e.node));
-      page++;
+  try {
+    // Abort the Wave request if it takes more than 25 s (leaves headroom for DB work)
+    const controller = new AbortController();
+    const timeout    = setTimeout(() => controller.abort(), 25000);
+
+    let waveData;
+    try {
+      const fetchRes = await fetch(WAVE_GQL, {
+        method:  'POST',
+        headers: { Authorization: `Bearer ${WAVE_TOKEN()}`, 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ query: INVOICES_QUERY, variables: { businessId: WAVE_BIZ_ID(), page } }),
+        signal:  controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!fetchRes.ok) throw new Error(`Wave API HTTP ${fetchRes.status}`);
+      const json = await fetchRes.json();
+      if (json.errors?.length) throw new Error(json.errors[0].message);
+      waveData = json.data;
+    } catch (fetchErr) {
+      clearTimeout(timeout);
+      if (fetchErr.name === 'AbortError')
+        return res.status(504).json({ error: 'Wave API did not respond in time. Try again.' });
+      throw fetchErr;
     }
+
+    const { invoices } = waveData.business;
+    const totalPages   = invoices.pageInfo.totalPages || 1;
+    const pageInvoices = invoices.edges.map(e => e.node);
 
     // Skip wave_invoice_ids already in staging (reviewed or not)
     const existingIds = new Set(
       await db('wave_invoice_staging').pluck('wave_invoice_id')
     );
 
-    const toInsert = allWaveInvoices.filter(wi => !existingIds.has(wi.id));
+    const toInsert = pageInvoices.filter(wi => !existingIds.has(wi.id));
 
     let imported = 0;
     for (const wi of toInsert) {
@@ -113,7 +133,7 @@ router.post('/sync', async (req, res) => {
 
       await db('wave_invoice_staging').insert({
         wave_invoice_id: wi.id,
-        wave_status:     wi.status     || null,
+        wave_status:     wi.status        || null,
         invoice_number:  wi.invoiceNumber || `WAVE-${wi.id.slice(-8)}`,
         client_name:     wi.customer?.name || null,
         invoice_date:    wi.invoiceDate   || new Date().toISOString().split('T')[0],
@@ -123,18 +143,20 @@ router.post('/sync', async (req, res) => {
         tax_amount:      taxAmount,
         line_items:      JSON.stringify(lineItems),
         notes:           wi.memo || null,
-      });
+      }).onConflict('wave_invoice_id').ignore(); // guard against race conditions
       imported++;
     }
 
-    // Return count of still-unreviewed staging records
     const pending = await db('wave_invoice_staging').where({ reviewed: false }).count('id as n').first();
 
     res.json({
+      page,
+      total_pages: totalPages,
+      has_more:    page < totalPages,
+      next_page:   page < totalPages ? page + 1 : null,
       imported,
-      skipped: allWaveInvoices.length - toInsert.length,
-      total:   allWaveInvoices.length,
-      pending: parseInt(pending.n, 10),
+      skipped:     pageInvoices.length - toInsert.length,
+      pending:     parseInt(pending.n, 10),
     });
   } catch (err) {
     console.error('Wave sync error:', err);

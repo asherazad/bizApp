@@ -350,13 +350,21 @@ export default function Invoices() {
 
   async function syncWave() {
     setSyncing(true);
+    let totalImported = 0;
+    let page = 1;
     try {
-      const { data } = await api.post('/wave/sync');
-      setPendingCount(data.pending);
-      if (data.imported === 0) {
-        toast(`No new invoices — ${data.skipped} already synced`, 'info');
+      // Fetch one page at a time to stay within serverless timeout limits
+      while (true) {
+        const { data } = await api.post(`/wave/sync?page=${page}`);
+        totalImported += data.imported || 0;
+        setPendingCount(data.pending);
+        if (!data.has_more) break;
+        page = data.next_page;
+      }
+      if (totalImported === 0) {
+        toast('No new invoices — already up to date', 'info');
       } else {
-        toast(`${data.imported} new invoice${data.imported > 1 ? 's' : ''} added to review queue`, 'success');
+        toast(`${totalImported} new invoice${totalImported > 1 ? 's' : ''} added to review queue`, 'success');
         setQueueOpen(true);
       }
     } catch (err) {
