@@ -3,10 +3,9 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { formatCurrency, formatDate, statusBadgeClass } from '../../lib/format';
-import { Plus, Upload, Filter } from 'lucide-react';
+import { Plus, Upload, Filter, RefreshCcw, AlertCircle } from 'lucide-react';
 import InvoiceWizard from './InvoiceWizard';
 import InvoiceDetail from './InvoiceDetail';
-import InvoiceFileViewer from '../../components/InvoiceFileViewer';
 
 const STATUSES   = ['', 'Pending', 'Received', 'Overdue', 'Disputed'];
 const CURRENCIES = ['', 'PKR', 'USD', 'EUR', 'AED', 'GBP'];
@@ -40,14 +39,16 @@ export default function Invoices() {
   const [invoices, setInvoices]     = useState([]);
   const [loading, setLoading]       = useState(true);
   const [modal, setModal]           = useState(null); // null | 'import' | 'new' | invoiceId UUID
+  const [syncing, setSyncing]       = useState(false);
 
   // Filters
-  const [filterStatus,   setFilterStatus]   = useState('');
-  const [filterCurrency, setFilterCurrency] = useState('');
-  const [filterDateFrom, setFilterDateFrom] = useState('');
-  const [filterDateTo,   setFilterDateTo]   = useState('');
-  const [filterPOOnly,   setFilterPOOnly]   = useState(false);
-  const [showFilters,    setShowFilters]     = useState(false);
+  const [filterStatus,      setFilterStatus]      = useState('');
+  const [filterCurrency,    setFilterCurrency]    = useState('');
+  const [filterDateFrom,    setFilterDateFrom]    = useState('');
+  const [filterDateTo,      setFilterDateTo]      = useState('');
+  const [filterPOOnly,      setFilterPOOnly]      = useState(false);
+  const [filterNeedsReview, setFilterNeedsReview] = useState(false);
+  const [showFilters,       setShowFilters]       = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,7 +65,28 @@ export default function Invoices() {
 
   useEffect(() => { load(); }, [load]);
 
-  const displayed = filterPOOnly ? invoices.filter(i => i.po_id) : invoices;
+  async function syncWave() {
+    setSyncing(true);
+    try {
+      const { data } = await api.post('/wave/sync');
+      if (data.imported === 0) {
+        toast(`No new invoices — ${data.skipped} already synced`, 'info');
+      } else {
+        toast(`Imported ${data.imported} new invoice${data.imported > 1 ? 's' : ''} from Wave`, 'success');
+      }
+      load();
+    } catch (err) {
+      toast(err.response?.data?.error || 'Wave sync failed', 'error');
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  const needsReviewCount = invoices.filter(i => i.needs_review).length;
+
+  let displayed = invoices;
+  if (filterPOOnly)      displayed = displayed.filter(i => i.po_id);
+  if (filterNeedsReview) displayed = displayed.filter(i => i.needs_review);
 
   const totalPending = invoices.filter(i => i.status === 'Pending').reduce((s, i) => s + parseFloat(i.pkr_equivalent||i.total_amount||0), 0);
   const overdueCount = invoices.filter(i => i.status === 'Overdue').length;
@@ -84,12 +106,16 @@ export default function Invoices() {
               {invoices.length} invoices
               {totalPending > 0 && <> · Pending: <strong style={{ color: 'var(--danger)' }}>{formatCurrency(totalPending, 'PKR')}</strong></>}
               {overdueCount > 0 && <span style={{ color: 'var(--danger)', marginLeft: 8 }}>· {overdueCount} overdue</span>}
+              {needsReviewCount > 0 && <span style={{ color: 'var(--warning-text)', marginLeft: 8 }}>· {needsReviewCount} need review</span>}
             </div>
           )}
         </div>
         <div className="flex gap-2">
           <button className="btn btn-secondary" onClick={() => setShowFilters(f => !f)}>
             <Filter size={14}/> Filters
+          </button>
+          <button className="btn btn-secondary" onClick={syncWave} disabled={syncing}>
+            <RefreshCcw size={14} style={syncing ? { animation: 'spin 1s linear infinite' } : {}}/> {syncing ? 'Syncing…' : 'Sync Wave'}
           </button>
           <button className="btn btn-secondary" onClick={() => setModal('import')}>
             <Upload size={14}/> Import PDF
@@ -103,11 +129,24 @@ export default function Invoices() {
       {/* Status pill filters */}
       <div className="flex gap-2 mb-3" style={{ flexWrap: 'wrap' }}>
         {STATUSES.map(s => (
-          <button key={s} className={`btn btn-sm ${filterStatus === s ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setFilterStatus(s)}>
+          <button key={s} className={`btn btn-sm ${filterStatus === s && !filterNeedsReview ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => { setFilterStatus(s); setFilterNeedsReview(false); }}>
             {s === '' ? 'All' : s}
           </button>
         ))}
+        <button
+          className={`btn btn-sm ${filterNeedsReview ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => { setFilterNeedsReview(r => !r); setFilterStatus(''); }}
+          style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+        >
+          <AlertCircle size={12}/>
+          Needs Review
+          {needsReviewCount > 0 && (
+            <span style={{ background: 'var(--danger)', color: '#fff', borderRadius: 999, fontSize: 10, padding: '1px 6px', marginLeft: 2 }}>
+              {needsReviewCount}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Advanced filters */}
@@ -132,7 +171,7 @@ export default function Invoices() {
               <input type="checkbox" id="po-only" checked={filterPOOnly} onChange={e => setFilterPOOnly(e.target.checked)}/>
               <label htmlFor="po-only" style={{ fontSize: 13, cursor: 'pointer' }}>PO linked only</label>
             </div>
-            <button className="btn btn-secondary btn-sm" onClick={() => { setFilterStatus(''); setFilterCurrency(''); setFilterDateFrom(''); setFilterDateTo(''); setFilterPOOnly(false); }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => { setFilterStatus(''); setFilterCurrency(''); setFilterDateFrom(''); setFilterDateTo(''); setFilterPOOnly(false); setFilterNeedsReview(false); }}>
               Clear All
             </button>
           </div>
@@ -163,7 +202,19 @@ export default function Invoices() {
                 <tr><td colSpan={10} className="text-muted" style={{ textAlign: 'center', padding: 32 }}>No invoices found</td></tr>
               ) : displayed.map(inv => (
                 <tr key={inv.id} style={{ cursor: 'pointer' }} onClick={() => setModal(inv.id)}>
-                  <td style={{ fontWeight: 600 }}>{inv.invoice_number}</td>
+                  <td style={{ fontWeight: 600 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      {inv.invoice_number}
+                      {inv.source === 'wave' && (
+                        <span style={{ fontSize: 10, background: '#2979ff22', color: '#2979ff', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>Wave</span>
+                      )}
+                    </div>
+                    {inv.needs_review && (
+                      <div style={{ fontSize: 10, color: 'var(--warning-text)', display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
+                        <AlertCircle size={10}/> Needs Review
+                      </div>
+                    )}
+                  </td>
                   <td style={{ fontSize: 13, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.client_name || <span className="text-muted">—</span>}</td>
                   <td><WingBadges inv={inv}/></td>
                   <td className="text-muted" style={{ fontSize: 12 }}>{formatDate(inv.invoice_date)}</td>

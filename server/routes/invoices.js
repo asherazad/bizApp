@@ -476,7 +476,7 @@ router.put('/:id', async (req, res) => {
     const {
       invoice_number, vendor_name, client_name,
       invoice_date, due_date, currency, exchange_rate,
-      tax_amount, line_items, notes,
+      tax_amount, line_items, notes, po_id, needs_review,
     } = req.body;
 
     const update = {};
@@ -487,6 +487,8 @@ router.put('/:id', async (req, res) => {
     if (due_date       !== undefined) update.due_date       = due_date       || null;
     if (currency       !== undefined) update.currency       = currency;
     if (notes          !== undefined) update.notes          = notes          || null;
+    if (po_id          !== undefined) update.po_id          = po_id          || null;
+    if (needs_review   !== undefined) update.needs_review   = needs_review;
 
     // Recalculate totals when financial fields change
     const newCurrency    = currency       ?? inv.currency;
