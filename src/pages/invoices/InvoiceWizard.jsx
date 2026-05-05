@@ -16,6 +16,60 @@ function calcItem(item, key, val) {
   return next;
 }
 
+// ─── Searchable select ────────────────────────────────────────────────────────
+function SearchSelect({ value, onChange, options, placeholder }) {
+  const [query, setQuery]   = useState(value || '');
+  const [open, setOpen]     = useState(false);
+  const ref                 = useRef(null);
+
+  useEffect(() => { setQuery(value || ''); }, [value]);
+
+  useEffect(() => {
+    function handle(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, []);
+
+  const filtered = options.filter(o => o.toLowerCase().includes(query.toLowerCase()));
+
+  function select(name) { onChange(name); setQuery(name); setOpen(false); }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <input
+        className="form-control"
+        value={query}
+        placeholder={placeholder}
+        onChange={e => { setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+      />
+      {open && filtered.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999,
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          borderRadius: 6, boxShadow: '0 4px 16px rgba(0,0,0,.12)',
+          maxHeight: 200, overflowY: 'auto', marginTop: 2,
+        }}>
+          {filtered.map(name => (
+            <div
+              key={name}
+              onMouseDown={() => select(name)}
+              style={{
+                padding: '8px 12px', cursor: 'pointer', fontSize: 13,
+                background: name === value ? 'var(--electric-light)' : undefined,
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-secondary)'}
+              onMouseLeave={e => e.currentTarget.style.background = name === value ? 'var(--electric-light)' : ''}
+            >
+              {name}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Step indicator ───────────────────────────────────────────────────────────
 function Stepper({ steps, current }) {
   return (
@@ -217,18 +271,22 @@ function StepReview({ form, setForm, lineItems, setLineItems, clients }) {
         </div>
         <div className="form-group">
           <label className="form-label">Vendor (From)</label>
-          <input className="form-control" list="invoice-vendors-list" value={form.vendor_name} onChange={f('vendor_name')} placeholder="Select or type vendor name"/>
-          <datalist id="invoice-vendors-list">
-            {(clients||[]).map(c => <option key={c.id} value={c.name}/>)}
-          </datalist>
+          <SearchSelect
+            value={form.vendor_name}
+            onChange={v => setForm(p => ({ ...p, vendor_name: v }))}
+            options={(clients||[]).map(c => c.name)}
+            placeholder="Select or type vendor name"
+          />
         </div>
       </div>
       <div className="form-group">
         <label className="form-label">Client / Bill To</label>
-        <input className="form-control" list="invoice-clients-list" value={form.client_name} onChange={f('client_name')} placeholder="Select or type client name"/>
-        <datalist id="invoice-clients-list">
-          {(clients||[]).map(c => <option key={c.id} value={c.name}/>)}
-        </datalist>
+        <SearchSelect
+          value={form.client_name}
+          onChange={v => setForm(p => ({ ...p, client_name: v }))}
+          options={(clients||[]).map(c => c.name)}
+          placeholder="Select or type client name"
+        />
       </div>
       <div className="grid-2">
         <div className="form-group">
