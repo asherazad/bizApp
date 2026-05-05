@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { formatDate } from '../../lib/format';
-import { Upload, Calendar, Download } from 'lucide-react';
+import { Upload, Calendar, Download, Printer } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TODAY    = new Date().toISOString().split('T')[0];
@@ -229,7 +229,6 @@ function MonthlyView({ wing }) {
   }
 
   function downloadCSV() {
-    const monLabel = `${MONTHS[month - 1]} ${year}`;
     const headers  = ['Resource', 'Job Type', ...days.map(d => `${DOW[d.dow]} ${d.day}`), 'P', 'H', 'L'];
     const dataRows = displayed.map(res => {
       const s     = summary(res.id);
@@ -245,13 +244,79 @@ function MonthlyView({ wing }) {
       .map(row => row.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','))
       .join('\n');
 
-    const blob = new Blob(['﻿' + csv, ''], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
     a.download = `attendance-${year}-${String(month).padStart(2, '0')}${excludeRemote ? '-no-remote' : ''}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function printPDF() {
+    const title = `Attendance — ${MONTHS[month - 1]} ${year}${excludeRemote ? ' (No Remote)' : ''}`;
+
+    const thDay = (d) => `
+      <th style="text-align:center;padding:2px 3px;min-width:22px;background:${d.weekend ? '#f1f5f9' : '#fff'};color:${d.weekend ? '#94a3b8' : '#0f172a'}">
+        <div style="font-size:8px;font-weight:400">${DOW[d.dow]}</div>
+        <div style="font-weight:700">${d.day}</div>
+      </th>`;
+
+    const headerRow = `<tr>
+      <th style="text-align:left;padding:4px 8px;background:#f1f5f9;white-space:nowrap">Resource</th>
+      ${days.map(thDay).join('')}
+      <th style="text-align:center;color:#16a34a;padding:4px 3px">P</th>
+      <th style="text-align:center;color:#ea580c;padding:4px 3px">H</th>
+      <th style="text-align:center;color:#d97706;padding:4px 3px">L</th>
+    </tr>`;
+
+    const dataRows = displayed.map(res => {
+      const s = summary(res.id);
+      const cells = days.map(d => {
+        if (d.weekend) return `<td style="text-align:center;padding:2px;background:#f8fafc;color:#94a3b8;font-size:9px">—</td>`;
+        const rec = lookup[res.id]?.[d.date];
+        const gs  = rec ? (GRID_STYLE[rec.status] || null) : null;
+        return gs
+          ? `<td style="text-align:center;padding:2px;background:${gs.bg}"><span style="font-size:9px;font-weight:700;color:${gs.color}">${gs.label}</span></td>`
+          : `<td style="text-align:center;padding:2px;color:#e2e8f0;font-size:9px">·</td>`;
+      }).join('');
+
+      return `<tr>
+        <td style="padding:3px 8px;font-weight:500;white-space:nowrap;border-right:1px solid #e2e8f0">
+          ${res.full_name}${res.job_type ? `<span style="font-size:8px;color:#94a3b8;margin-left:5px">${res.job_type}</span>` : ''}
+        </td>
+        ${cells}
+        <td style="text-align:center;font-weight:700;color:#16a34a">${s.P || '—'}</td>
+        <td style="text-align:center;font-weight:700;color:#ea580c">${s.H || '—'}</td>
+        <td style="text-align:center;font-weight:700;color:#d97706">${s.L || '—'}</td>
+      </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+      <title>${title}</title>
+      <style>
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:system-ui,sans-serif;font-size:10px;padding:12px}
+        h2{font-size:13px;font-weight:700;margin-bottom:10px;color:#0f172a}
+        table{border-collapse:collapse;width:100%}
+        th,td{border:1px solid #e2e8f0;font-size:10px}
+        @media print{body{padding:4px}@page{size:landscape;margin:8mm}}
+      </style></head>
+      <body>
+        <h2>${title}</h2>
+        <table><thead>${headerRow}</thead><tbody>${dataRows}</tbody></table>
+      </body></html>`;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-9999px;top:-9999px;';
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open(); doc.write(html); doc.close();
+    iframe.onload = () => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => document.body.removeChild(iframe), 2000);
+    };
   }
 
   return (
@@ -271,10 +336,14 @@ function MonthlyView({ wing }) {
           Exclude Remote
         </label>
 
-        {/* Download button */}
+        {/* Download buttons */}
         <button className="btn btn-secondary btn-sm" onClick={downloadCSV} disabled={loading || displayed.length === 0}
           style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <Download size={13}/> Download CSV
+          <Download size={13}/> CSV
+        </button>
+        <button className="btn btn-secondary btn-sm" onClick={printPDF} disabled={loading || displayed.length === 0}
+          style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <Printer size={13}/> PDF
         </button>
 
         {/* Legend */}
