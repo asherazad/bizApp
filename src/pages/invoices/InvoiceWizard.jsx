@@ -312,8 +312,20 @@ function StepReview({ form, setForm, lineItems, setLineItems, clients }) {
           </div>
         )}
         <div className="form-group">
+          <label className="form-label">Tax Rate</label>
+          <select className="form-control" value={form.tax_rate || ''} onChange={e => {
+            const rate = e.target.value;
+            const computed = rate ? (subtotal * parseFloat(rate) / 100).toFixed(2) : form.tax_amount;
+            setForm(p => ({ ...p, tax_rate: rate, tax_amount: computed }));
+          }}>
+            <option value="">Custom</option>
+            {[0, 5, 10, 15, 16, 17, 20].map(r => <option key={r} value={r}>{r}%</option>)}
+          </select>
+        </div>
+        <div className="form-group">
           <label className="form-label">Tax Amount ({form.currency})</label>
-          <input type="number" step="0.01" className="form-control" value={form.tax_amount} onChange={f('tax_amount')} placeholder="0"/>
+          <input type="number" step="0.01" className="form-control" value={form.tax_amount} placeholder="0"
+            onChange={e => setForm(p => ({ ...p, tax_rate: '', tax_amount: e.target.value }))}/>
         </div>
       </div>
 
