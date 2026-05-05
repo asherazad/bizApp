@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { formatDate } from '../../lib/format';
-import { Upload, Calendar } from 'lucide-react';
+import { Upload, Calendar, Download } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TODAY    = new Date().toISOString().split('T')[0];
@@ -184,11 +184,12 @@ function DailyView({ wing }) {
 // ══════════════════════════════════════════════════════════════════════════════
 function MonthlyView({ wing }) {
   const toast = useToast();
-  const [year,      setYear]      = useState(CUR_YEAR);
-  const [month,     setMonth]     = useState(CUR_MON);
-  const [resources, setResources] = useState([]);
-  const [records,   setRecords]   = useState([]);
-  const [loading,   setLoading]   = useState(false);
+  const [year,          setYear]          = useState(CUR_YEAR);
+  const [month,         setMonth]         = useState(CUR_MON);
+  const [resources,     setResources]     = useState([]);
+  const [records,       setRecords]       = useState([]);
+  const [loading,       setLoading]       = useState(false);
+  const [excludeRemote, setExcludeRemote] = useState(false);
 
   async function load(y, m) {
     setLoading(true);
@@ -216,8 +217,8 @@ function MonthlyView({ wing }) {
   }
 
   const days = daysInMonth(year, month);
+  const displayed = excludeRemote ? resources.filter(r => r.job_type !== 'Remote') : resources;
 
-  // Per-resource summary
   function summary(rid) {
     const recs = Object.values(lookup[rid] || {});
     return {
@@ -227,17 +228,57 @@ function MonthlyView({ wing }) {
     };
   }
 
+  function downloadCSV() {
+    const monLabel = `${MONTHS[month - 1]} ${year}`;
+    const headers  = ['Resource', 'Job Type', ...days.map(d => `${DOW[d.dow]} ${d.day}`), 'P', 'H', 'L'];
+    const dataRows = displayed.map(res => {
+      const s     = summary(res.id);
+      const cells = days.map(d => {
+        if (d.weekend) return 'WE';
+        const rec = lookup[res.id]?.[d.date];
+        return rec ? (GRID_STYLE[rec.status]?.label ?? rec.status ?? '') : '';
+      });
+      return [res.full_name, res.job_type || '', ...cells, s.P, s.H, s.L];
+    });
+
+    const csv = [headers, ...dataRows]
+      .map(row => row.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob(['﻿' + csv, ''], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `attendance-${year}-${String(month).padStart(2, '0')}${excludeRemote ? '-no-remote' : ''}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div>
-      {/* Month / Year picker */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16 }}>
+      {/* Controls row */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
         <select className="form-control" style={{ width: 110, height: 34 }} value={month} onChange={e => setMonth(+e.target.value)}>
           {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
         </select>
         <select className="form-control" style={{ width: 90, height: 34 }} value={year} onChange={e => setYear(+e.target.value)}>
           {[CUR_YEAR - 1, CUR_YEAR, CUR_YEAR + 1].map(y => <option key={y} value={y}>{y}</option>)}
         </select>
-        <div style={{ display: 'flex', gap: 10, marginLeft: 8, fontSize: 11 }}>
+
+        {/* Exclude Remote toggle */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, userSelect: 'none' }}>
+          <input type="checkbox" checked={excludeRemote} onChange={e => setExcludeRemote(e.target.checked)}/>
+          Exclude Remote
+        </label>
+
+        {/* Download button */}
+        <button className="btn btn-secondary btn-sm" onClick={downloadCSV} disabled={loading || displayed.length === 0}
+          style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <Download size={13}/> Download CSV
+        </button>
+
+        {/* Legend */}
+        <div style={{ display: 'flex', gap: 10, marginLeft: 4, fontSize: 11 }}>
           {Object.entries(GRID_STYLE).map(([k, v]) => (
             <span key={k} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ width: 14, height: 14, borderRadius: 3, background: v.bg, border: `1px solid ${v.color}`, display: 'inline-block', fontWeight: 700, fontSize: 9, color: v.color, textAlign: 'center', lineHeight: '14px' }}>{v.label}</span>
@@ -257,14 +298,11 @@ function MonthlyView({ wing }) {
                 <tr>
                   <th style={{ position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 2, minWidth: 140, whiteSpace: 'nowrap' }}>Resource</th>
                   {days.map(d => (
-                    <th
-                      key={d.date}
-                      style={{
-                        textAlign: 'center', padding: '4px 3px', minWidth: 28,
-                        background: d.weekend ? 'var(--surface-2)' : 'var(--surface)',
-                        color: d.weekend ? 'var(--text-muted)' : undefined,
-                      }}
-                    >
+                    <th key={d.date} style={{
+                      textAlign: 'center', padding: '4px 3px', minWidth: 28,
+                      background: d.weekend ? 'var(--surface-2)' : 'var(--surface)',
+                      color: d.weekend ? 'var(--text-muted)' : undefined,
+                    }}>
                       <div style={{ fontSize: 10, fontWeight: 400, lineHeight: 1 }}>{DOW[d.dow]}</div>
                       <div style={{ fontWeight: 700 }}>{d.day}</div>
                     </th>
@@ -275,27 +313,26 @@ function MonthlyView({ wing }) {
                 </tr>
               </thead>
               <tbody>
-                {resources.length === 0 ? (
+                {displayed.length === 0 ? (
                   <tr><td colSpan={days.length + 4} style={{ textAlign: 'center', padding: 32 }} className="text-muted">No resources found.</td></tr>
-                ) : resources.map(res => {
+                ) : displayed.map(res => {
                   const s = summary(res.id);
                   return (
                     <tr key={res.id}>
                       <td style={{ position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1, fontWeight: 500, whiteSpace: 'nowrap', padding: '4px 10px' }}>
                         {res.full_name}
+                        {res.job_type && <span style={{ fontSize: 9, color: 'var(--text-muted)', marginLeft: 5 }}>{res.job_type}</span>}
                       </td>
                       {days.map(d => {
-                        if (d.weekend) {
-                          return <td key={d.date} style={{ background: 'var(--surface-2)', textAlign: 'center', padding: '3px 2px', color: 'var(--text-muted)', fontSize: 10 }}>—</td>;
-                        }
+                        if (d.weekend) return (
+                          <td key={d.date} style={{ background: 'var(--surface-2)', textAlign: 'center', padding: '3px 2px', color: 'var(--text-muted)', fontSize: 10 }}>—</td>
+                        );
                         const rec = lookup[res.id]?.[d.date];
                         const gs  = rec ? (GRID_STYLE[rec.status] || null) : null;
                         return (
-                          <td
-                            key={d.date}
+                          <td key={d.date}
                             title={rec ? `${rec.check_in || '?'} – ${rec.check_out || '?'}` : 'No record'}
-                            style={{ textAlign: 'center', padding: '3px 2px', background: gs ? gs.bg : undefined }}
-                          >
+                            style={{ textAlign: 'center', padding: '3px 2px', background: gs ? gs.bg : undefined }}>
                             {gs
                               ? <span style={{ fontSize: 10, fontWeight: 700, color: gs.color, fontFamily: 'var(--font-mono)' }}>{gs.label}</span>
                               : <span style={{ color: 'var(--border)', fontSize: 10 }}>·</span>
