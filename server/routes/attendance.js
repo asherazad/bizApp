@@ -137,11 +137,13 @@ router.post('/import', upload.single('file'), async (req, res) => {
       const check_in  = entry.times[0];
       const check_out = entry.times.length > 1 ? entry.times[entry.times.length - 1] : null;
 
-      // Status: present = ≥8 h worked; half_day = <8 h or single punch
-      let status = 'half_day';
-      if (check_out) {
+      // present ≥8h | short_hours <8h | half_day = no checkout
+      let status;
+      if (!check_out) {
+        status = 'half_day';
+      } else {
         const worked = timeToMins(check_out) - timeToMins(check_in);
-        if (worked >= 8 * 60) status = 'present';
+        status = worked >= 8 * 60 ? 'present' : 'short_hours';
       }
 
       processed.push({ resource_id: resource.id, record_date: entry.date, check_in, check_out, status });
@@ -193,7 +195,7 @@ router.post('/import', upload.single('file'), async (req, res) => {
     for (const rid of resourceIds) {
       for (const d of allWeekdays) {
         if (!handledKeys.has(`${rid}_${d}`)) {
-          leaveRows.push({ resource_id: rid, record_date: d, status: 'leave' });
+          leaveRows.push({ resource_id: rid, record_date: d, status: 'absent' });
         }
       }
     }
@@ -202,7 +204,7 @@ router.post('/import', upload.single('file'), async (req, res) => {
         .onConflict(['resource_id', 'record_date']).ignore();
 
     res.json({
-      message: `Import complete — ${toInsert.length} added, ${skipped.length} duplicate${skipped.length !== 1 ? 's' : ''} skipped, ${leaveRows.length} leave days generated${unknownIds.size ? `, ${unknownIds.size} unknown IDs skipped` : ''}`,
+      message: `Import complete — ${toInsert.length} added, ${skipped.length} duplicate${skipped.length !== 1 ? 's' : ''} skipped, ${leaveRows.length} absent days marked${unknownIds.size ? `, ${unknownIds.size} unknown IDs skipped` : ''}`,
       inserted: toInsert.length,
       skipped:  skipped.length,
       leave:    leaveRows.length,

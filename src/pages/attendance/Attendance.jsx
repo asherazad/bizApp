@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { formatDate } from '../../lib/format';
-import { Upload, Calendar, Download, Printer } from 'lucide-react';
+import { Upload, Calendar, Download, Printer, Pencil, Plus } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TODAY    = new Date().toISOString().split('T')[0];
@@ -12,19 +12,40 @@ const CUR_MON  = new Date().getMonth() + 1; // 1-based
 
 const STATUS_BADGE = {
   present:        'badge-success',
-  half_day:       'badge-danger',
-  leave:          'badge-warning',
+  short_hours:    'badge-warning',
+  half_day:       'badge-warning',
   absent:         'badge-danger',
-  holiday:        'badge-neutral',
+  leave:          'badge-neutral',
+  sick_leave:     'badge-info',
+  casual_leave:   'badge-info',
+  unpaid_leave:   'badge-neutral',
   work_from_home: 'badge-info',
+  holiday:        'badge-neutral',
 };
 
 const GRID_STYLE = {
-  present:  { bg: 'rgba(34,197,94,.15)',  color: '#16a34a', label: 'P' },
-  half_day: { bg: 'rgba(249,115,22,.15)', color: '#ea580c', label: 'H' },
-  leave:    { bg: 'rgba(245,158,11,.15)', color: '#d97706', label: 'L' },
-  absent:   { bg: 'rgba(239,68,68,.15)',  color: '#dc2626', label: 'A' },
+  present:        { bg: 'rgba(34,197,94,.15)',   color: '#16a34a', label: 'P'  },
+  short_hours:    { bg: 'rgba(249,115,22,.15)',  color: '#ea580c', label: 'SH' },
+  half_day:       { bg: 'rgba(251,191,36,.15)',  color: '#d97706', label: 'HD' },
+  absent:         { bg: 'rgba(239,68,68,.15)',   color: '#dc2626', label: 'A'  },
+  leave:          { bg: 'rgba(148,163,184,.15)', color: '#64748b', label: 'L'  },
+  sick_leave:     { bg: 'rgba(139,92,246,.15)',  color: '#7c3aed', label: 'SL' },
+  casual_leave:   { bg: 'rgba(59,130,246,.15)',  color: '#2563eb', label: 'CL' },
+  unpaid_leave:   { bg: 'rgba(107,114,128,.15)', color: '#4b5563', label: 'UL' },
+  work_from_home: { bg: 'rgba(16,185,129,.15)',  color: '#059669', label: 'WH' },
 };
+
+const STATUS_OPTIONS = [
+  { value: 'present',        label: 'Present'        },
+  { value: 'short_hours',    label: 'Short Hours'    },
+  { value: 'half_day',       label: 'Half Day'       },
+  { value: 'absent',         label: 'Absent'         },
+  { value: 'sick_leave',     label: 'Sick Leave'     },
+  { value: 'casual_leave',   label: 'Casual Leave'   },
+  { value: 'unpaid_leave',   label: 'Unpaid Leave'   },
+  { value: 'work_from_home', label: 'Work from Home' },
+  { value: 'leave',          label: 'Leave'          },
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function calcHours(ci, co) {
@@ -55,6 +76,100 @@ function daysInMonth(year, month) {
 
 const DOW = ['Su','Mo','Tu','We','Th','Fr','Sa'];
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// ─── Attendance record modal (create + edit) ─────────────────────────────────
+function AttendanceModal({ record, date, wing, onClose, onSaved }) {
+  const isEdit = !!record?.id;
+  const toast  = useToast();
+  const [resources, setResources] = useState([]);
+  const [form, setForm] = useState({
+    resource_id: record?.resource_id || '',
+    record_date: record?.record_date?.slice(0, 10) || date || TODAY,
+    status:      record?.status    || 'present',
+    check_in:    record?.check_in  || '',
+    check_out:   record?.check_out || '',
+    notes:       record?.notes     || '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isEdit)
+      api.get('/resources', { params: wing?.id ? { wing_id: wing.id } : {} })
+        .then(r => setResources(r.data)).catch(() => {});
+  }, [isEdit, wing]);
+
+  function f(k) { return e => setForm(p => ({ ...p, [k]: e.target.value })); }
+
+  async function submit(e) {
+    e.preventDefault(); setSaving(true);
+    try {
+      if (isEdit) {
+        await api.put(`/attendance/${record.id}`, {
+          status: form.status, check_in: form.check_in || null,
+          check_out: form.check_out || null, notes: form.notes || null,
+        });
+        toast('Updated', 'success');
+      } else {
+        await api.post('/attendance', {
+          resource_id: form.resource_id, record_date: form.record_date,
+          status: form.status, check_in: form.check_in || null,
+          check_out: form.check_out || null, notes: form.notes || null,
+        });
+        toast('Record added', 'success');
+      }
+      onSaved();
+    } catch (err) { toast(err.response?.data?.error || 'Error', 'error'); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>{isEdit ? `Edit — ${record.resource_name}` : 'Add Attendance Record'}</h3>
+          <button className="btn btn-secondary btn-sm" onClick={onClose}>✕</button>
+        </div>
+        <form onSubmit={submit}>
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {!isEdit && (<>
+              <div className="form-group"><label className="form-label">Resource *</label>
+                <select className="form-control" required value={form.resource_id} onChange={f('resource_id')}>
+                  <option value="">Select…</option>
+                  {resources.map(r => <option key={r.id} value={r.id}>{r.full_name}</option>)}
+                </select>
+              </div>
+              <div className="form-group"><label className="form-label">Date *</label>
+                <input type="date" className="form-control" required value={form.record_date} onChange={f('record_date')} />
+              </div>
+            </>)}
+            <div className="form-group"><label className="form-label">Status *</label>
+              <select className="form-control" value={form.status} onChange={f('status')}>
+                {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div className="grid-2">
+              <div className="form-group"><label className="form-label">Check-in</label>
+                <input type="time" className="form-control" value={form.check_in} onChange={f('check_in')} />
+              </div>
+              <div className="form-group"><label className="form-label">Check-out</label>
+                <input type="time" className="form-control" value={form.check_out} onChange={f('check_out')} />
+              </div>
+            </div>
+            <div className="form-group"><label className="form-label">Notes</label>
+              <textarea className="form-control" rows={2} value={form.notes} onChange={f('notes')} />
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Add Record'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 // ─── Import button (shared across tabs) ──────────────────────────────────────
 function ImportButton({ onImported }) {
@@ -99,6 +214,7 @@ function DailyView({ wing }) {
   const [date,    setDate]    = useState(TODAY);
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [modal,   setModal]   = useState(null); // null | 'add' | record-object
 
   async function load(d) {
     setLoading(true);
@@ -112,51 +228,51 @@ function DailyView({ wing }) {
 
   useEffect(() => { load(date); }, [date, wing]);
 
-  const presentCount  = records.filter(r => r.status === 'present').length;
-  const halfCount     = records.filter(r => r.status === 'half_day').length;
-  const leaveCount    = records.filter(r => r.status === 'leave').length;
+  const presentCount = records.filter(r => r.status === 'present').length;
+  const absentCount  = records.filter(r => r.status === 'absent').length;
+  const leaveCount   = records.filter(r => ['leave','sick_leave','casual_leave','unpaid_leave'].includes(r.status)).length;
 
   return (
     <div>
-      {/* Date picker + summary */}
+      {/* Date picker + summary + add */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Date</span>
-          <input
-            type="date"
-            className="form-control"
-            style={{ height: 34, width: 160 }}
-            value={date}
-            onChange={e => setDate(e.target.value)}
-          />
+          <input type="date" className="form-control" style={{ height: 34, width: 160 }}
+            value={date} onChange={e => setDate(e.target.value)} />
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {[
-            { label: `${presentCount} Present`,  cls: 'badge-success' },
-            { label: `${halfCount} Short Hrs`,   cls: 'badge-danger'  },
-            { label: `${leaveCount} Leave`,       cls: 'badge-warning' },
-            { label: `${records.length} Total`,   cls: 'badge-neutral' },
+            { label: `${presentCount} Present`, cls: 'badge-success' },
+            { label: `${absentCount} Absent`,   cls: 'badge-danger'  },
+            { label: `${leaveCount} Leave`,      cls: 'badge-warning' },
+            { label: `${records.length} Total`,  cls: 'badge-neutral' },
           ].map(b => (
             <span key={b.label} className={`badge ${b.cls}`} style={{ fontSize: 12, padding: '4px 10px' }}>{b.label}</span>
           ))}
         </div>
+        <button className="btn btn-secondary btn-sm" onClick={() => setModal('add')}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, marginLeft: 'auto' }}>
+          <Plus size={13}/> Add Record
+        </button>
       </div>
 
       <div className="card" style={{ padding: 0 }}>
         <div className="table-wrap">
           <table className="table" style={{ fontSize: 12 }}>
             <thead>
-              <tr><th>Name</th><th>Check-in</th><th>Check-out</th><th>Hours</th><th>Status</th></tr>
+              <tr><th>Name</th><th>Check-in</th><th>Check-out</th><th>Hours</th><th>Status</th><th></th></tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={5} style={{ textAlign: 'center', padding: 32 }} className="text-muted">Loading…</td></tr>
+                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 32 }} className="text-muted">Loading…</td></tr>
               ) : records.length === 0 ? (
-                <tr><td colSpan={5} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No records for this date.</td></tr>
+                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No records for this date.</td></tr>
               ) : records.map(r => {
                 const hrs = calcHours(r.check_in, r.check_out);
+                const gs  = GRID_STYLE[r.status];
                 return (
-                  <tr key={r.id} style={r.status === 'half_day' ? { background: 'rgba(249,115,22,.05)' } : undefined}>
+                  <tr key={r.id} style={gs ? { background: gs.bg } : undefined}>
                     <td style={{ fontWeight: 500 }}>{r.resource_name}</td>
                     <td className="font-mono">{r.check_in  || '—'}</td>
                     <td className="font-mono">{r.check_out || '—'}</td>
@@ -168,6 +284,11 @@ function DailyView({ wing }) {
                         {(r.status || '').replace(/_/g, ' ')}
                       </span>
                     </td>
+                    <td>
+                      <button className="btn btn-secondary btn-sm" title="Edit" onClick={() => setModal(r)}>
+                        <Pencil size={12}/>
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
@@ -175,6 +296,16 @@ function DailyView({ wing }) {
           </table>
         </div>
       </div>
+
+      {modal && (
+        <AttendanceModal
+          record={modal === 'add' ? null : modal}
+          date={date}
+          wing={wing}
+          onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); load(date); }}
+        />
+      )}
     </div>
   );
 }
@@ -474,7 +605,11 @@ function ResourceView({ wing }) {
     const title = `Attendance — ${name} (${from} to ${to})`;
 
     const statusLabel = (s) => (s || '').replace(/_/g, ' ');
-    const statusColor = { present: '#16a34a', half_day: '#ea580c', leave: '#d97706', absent: '#dc2626' };
+    const statusColor = {
+      present: '#16a34a', short_hours: '#ea580c', half_day: '#d97706', absent: '#dc2626',
+      leave: '#64748b', sick_leave: '#7c3aed', casual_leave: '#2563eb', unpaid_leave: '#4b5563',
+      work_from_home: '#059669',
+    };
 
     const dataRows = records.map(r => {
       const hrs = calcHours(r.check_in, r.check_out);
