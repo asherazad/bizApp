@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../lib/api';
 import { formatCurrency, formatDate, statusBadgeClass } from '../../lib/format';
-import { Bell, RefreshCw } from 'lucide-react';
+import { Bell, RefreshCw, Eye, EyeOff } from 'lucide-react';
 
 export default function Dashboard() {
   const { activeWing } = useAuth();
-  const [data, setData]       = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData]           = useState(null);
+  const [loading, setLoading]     = useState(true);
+  const [showInvoices, setShowInvoices] = useState(false);
+  const [showPOs,      setShowPOs]      = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -35,13 +37,29 @@ export default function Dashboard() {
       {/* KPI Row */}
       <div className="stats-grid">
         <div className="stat-card electric">
-          <div className="stat-label">Outstanding Invoices</div>
-          <div className="stat-value">{formatCurrency(invoices?.outstanding_pkr)}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="stat-label">Outstanding Invoices</div>
+            <button onClick={() => setShowInvoices(v => !v)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)', lineHeight: 1 }}>
+              {showInvoices ? <EyeOff size={14}/> : <Eye size={14}/>}
+            </button>
+          </div>
+          <div className="stat-value" style={{ letterSpacing: showInvoices ? undefined : 2 }}>
+            {showInvoices ? formatCurrency(invoices?.outstanding_pkr) : '••••••'}
+          </div>
           <div className="stat-sub">{invoices?.overdue_count} overdue</div>
         </div>
         <div className="stat-card lime">
-          <div className="stat-label">Open POs Remaining</div>
-          <div className="stat-value">{formatCurrency(purchase_orders?.remaining_value, purchase_orders?.currency)}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="stat-label">Open POs Remaining</div>
+            <button onClick={() => setShowPOs(v => !v)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)', lineHeight: 1 }}>
+              {showPOs ? <EyeOff size={14}/> : <Eye size={14}/>}
+            </button>
+          </div>
+          <div className="stat-value" style={{ letterSpacing: showPOs ? undefined : 2 }}>
+            {showPOs ? formatCurrency(purchase_orders?.remaining_value, purchase_orders?.currency) : '••••••'}
+          </div>
           <div className="stat-sub">{purchase_orders?.total_count} purchase orders</div>
         </div>
         <div className="stat-card warning">
