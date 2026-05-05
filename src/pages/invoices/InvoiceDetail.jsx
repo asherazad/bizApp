@@ -743,6 +743,7 @@ export default function InvoiceDetail({ invoiceId, wings, onClose, onRefresh }) 
       {editOpen && (
         <EditInvoiceModal
           inv={inv}
+          wings={wings}
           onClose={() => setEditOpen(false)}
           onSaved={() => { setEditOpen(false); load(); onRefresh(); }}
         />
