@@ -210,7 +210,7 @@ router.post('/staging/:id/finalize', async (req, res) => {
         total_amount:         total,
         pkr_equivalent:       pkr_eq,
         tax_amount:           taxAmt,
-        line_items:           staged.line_items,
+        line_items:           JSON.stringify(Array.isArray(staged.line_items) ? staged.line_items : []),
         notes:                staged.notes          || null,
         status:               'Pending',
         source:               'wave',
