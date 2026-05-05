@@ -4,10 +4,10 @@ import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { Plus, Pencil, Users2 } from 'lucide-react';
 
-function ClientModal({ client, wings, onClose, onSaved }) {
+function ClientModal({ client, wings, activeWing, onClose, onSaved }) {
   const toast = useToast();
   const [form, setForm] = useState({
-    wing_id: client?.wing_id || '', name: client?.name || '',
+    wing_id: client?.wing_id || activeWing?.id || '', name: client?.name || '',
     email: client?.email || '', phone: client?.phone || '',
     address: client?.address || '', ntn: client?.ntn || '',
     strn: client?.strn || '', type: client?.type || 'client',
@@ -124,7 +124,7 @@ export default function Clients() {
       </div>
 
       {modal !== null && (
-        <ClientModal client={modal?.id ? modal : null} wings={wings} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />
+        <ClientModal client={modal?.id ? modal : null} wings={wings} activeWing={activeWing} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />
       )}
     </div>
   );
