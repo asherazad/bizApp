@@ -16,6 +16,7 @@ const TXN_CATEGORIES = [
   'Travel & Transport',
   'Marketing',
   'Insurance',
+  'Loan',
   'Loan Repayment',
   'Bank Charges',
   'Transfer',
