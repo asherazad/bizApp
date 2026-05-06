@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
-import { Plus, Landmark, ArrowUpRight, ArrowDownLeft, ArrowLeftRight, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Landmark, ArrowUpRight, ArrowDownLeft, ArrowLeftRight, Pencil, Trash2, Download, Printer } from 'lucide-react';
 
 const TXN_CATEGORIES = [
   'Client Payment',
@@ -473,6 +473,83 @@ export default function Banks() {
   useEffect(() => { loadAccounts(); }, [activeWing]);
   useEffect(() => { if (selected) loadTxns(selected.id); }, [selected]);
 
+  function exportCSV() {
+    const accountLabel = `${selected.bank_name} - ${selected.account_title}`;
+    const headers = ['Date', 'Description', 'Category', 'Type', 'Amount', 'Currency', 'Balance'];
+    const rows = transactions.map(t => [
+      t.txn_date?.slice(0, 10) || '',
+      t.description || '',
+      t.reference_type || '',
+      t.txn_type || '',
+      t.amount || '',
+      t.currency || selected.currency_code || '',
+      t.running_balance != null ? t.running_balance : '',
+    ]);
+    const csv = [headers, ...rows]
+      .map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `transactions-${accountLabel.replace(/[^a-z0-9]/gi, '-')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportPDF() {
+    const accountLabel = `${selected.bank_name} — ${selected.account_title}`;
+    const cur = selected.currency_code || selected.currency || '';
+
+    const dataRows = transactions.map(t => {
+      const isCredit = t.txn_type === 'Credit';
+      const amtColor = isCredit ? '#16a34a' : '#dc2626';
+      return `<tr>
+        <td style="padding:4px 8px;white-space:nowrap">${t.txn_date?.slice(0,10) || ''}</td>
+        <td style="padding:4px 8px">${t.description || ''}</td>
+        <td style="padding:4px 8px;color:#64748b">${t.reference_type || '—'}</td>
+        <td style="padding:4px 8px;text-align:center">
+          <span style="background:${amtColor}22;color:${amtColor};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600">${t.txn_type}</span>
+        </td>
+        <td style="padding:4px 8px;text-align:right;font-family:monospace;color:${amtColor};font-weight:600">${isCredit ? '+' : '-'}${parseFloat(t.amount || 0).toLocaleString()}</td>
+        <td style="padding:4px 8px;text-align:right;font-family:monospace;color:#64748b">${t.running_balance != null ? parseFloat(t.running_balance).toLocaleString() : '—'}</td>
+      </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+      <title>${accountLabel}</title>
+      <style>
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:system-ui,sans-serif;font-size:11px;padding:16px;color:#0f172a}
+        h2{font-size:14px;font-weight:700;margin-bottom:2px}
+        .sub{font-size:11px;color:#64748b;margin-bottom:14px}
+        table{border-collapse:collapse;width:100%}
+        th,td{border:1px solid #e2e8f0}
+        th{background:#f8fafc;padding:5px 8px;text-align:left;font-weight:600;font-size:11px}
+        tbody tr:nth-child(even){background:#fafafa}
+        @media print{body{padding:6px}@page{size:landscape;margin:10mm}}
+      </style></head>
+      <body>
+        <h2>${accountLabel}</h2>
+        <div class="sub">${cur} · ${transactions.length} transaction${transactions.length !== 1 ? 's' : ''} · Balance: ${parseFloat(selected.current_balance || 0).toLocaleString()} ${cur}</div>
+        <table>
+          <thead><tr><th>Date</th><th>Description</th><th>Category</th><th style="text-align:center">Type</th><th style="text-align:right">Amount</th><th style="text-align:right">Balance</th></tr></thead>
+          <tbody>${dataRows}</tbody>
+        </table>
+      </body></html>`;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-9999px;top:-9999px;';
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open(); doc.write(html); doc.close();
+    iframe.onload = () => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => document.body.removeChild(iframe), 2000);
+    };
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -516,6 +593,16 @@ export default function Banks() {
         <div className="card">
           <div className="card-header">
             <h3>{selected.bank_name} — {selected.account_title}</h3>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button className="btn btn-secondary btn-sm" onClick={exportCSV} disabled={!transactions.length}
+                style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Download size={13}/> CSV
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={exportPDF} disabled={!transactions.length}
+                style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Printer size={13}/> PDF
+              </button>
+            </div>
           </div>
           <div className="table-wrap">
             <table className="table">
