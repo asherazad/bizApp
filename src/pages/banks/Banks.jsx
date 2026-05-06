@@ -307,6 +307,58 @@ function TxnModal({ account, onClose, onSaved }) {
   );
 }
 
+function EditTxnModal({ txn, onClose, onSaved }) {
+  const toast = useToast();
+  const [form, setForm] = useState({
+    description:    txn.description    || '',
+    reference_type: txn.reference_type || '',
+    txn_date:       txn.txn_date?.slice(0, 10) || '',
+  });
+  const [saving, setSaving] = useState(false);
+  function f(k) { return e => setForm(p => ({ ...p, [k]: e.target.value })); }
+
+  async function submit(e) {
+    e.preventDefault(); setSaving(true);
+    try {
+      await api.put(`/banks/transactions/${txn.id}`, form);
+      toast('Transaction updated', 'success');
+      onSaved();
+    } catch (err) { toast(err.response?.data?.error || 'Error', 'error'); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Edit Transaction</h3>
+          <button className="btn btn-secondary btn-sm" onClick={onClose}>✕</button>
+        </div>
+        <form onSubmit={submit}>
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="form-group"><label className="form-label">Date *</label>
+              <input type="date" className="form-control" required value={form.txn_date} onChange={f('txn_date')} />
+            </div>
+            <div className="form-group"><label className="form-label">Description *</label>
+              <input className="form-control" required value={form.description} onChange={f('description')} />
+            </div>
+            <div className="form-group"><label className="form-label">Category</label>
+              <select className="form-control" value={form.reference_type} onChange={f('reference_type')}>
+                <option value="">— Select category —</option>
+                {TXN_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function Banks() {
   const { activeWing, wings } = useAuth();
   const toast = useToast();
@@ -319,6 +371,7 @@ export default function Banks() {
   const [deleting, setDeleting]     = useState(false);
   const [txnModal, setTxnModal]     = useState(false);
   const [transferModal, setTransferModal] = useState(false);
+  const [editTxn, setEditTxn]       = useState(null);
   const [reverseTxn, setReverseTxn] = useState(null);
   const [reversing, setReversing]   = useState(false);
   const [loading, setLoading]       = useState(true);
@@ -441,7 +494,10 @@ export default function Banks() {
                       </td>
                       <td className="text-right font-mono">{formatCurrency(t.amount, t.currency)}</td>
                       <td className="text-right font-mono text-muted">{t.running_balance != null ? formatCurrency(t.running_balance, selected.currency_code || selected.currency) : '—'}</td>
-                      <td>
+                      <td style={{ display: 'flex', gap: 4 }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => setEditTxn(t)} title="Edit">
+                          <Pencil size={12}/>
+                        </button>
                         <button
                           className="btn btn-secondary btn-sm"
                           style={{ fontSize: 11, padding: '3px 8px', color: 'var(--danger, #dc3545)' }}
@@ -459,6 +515,7 @@ export default function Banks() {
         </div>
       )}
 
+      {editTxn && <EditTxnModal txn={editTxn} onClose={() => setEditTxn(null)} onSaved={() => { setEditTxn(null); loadTxns(selected?.id); }} />}
       {modal && <AccountModal wings={wings} onClose={() => setModal(false)} onSaved={() => { setModal(false); loadAccounts(); }} />}
       {editTarget && <EditAccountModal account={editTarget} wings={wings} onClose={() => setEditTarget(null)} onSaved={() => { setEditTarget(null); loadAccounts(); }} />}
       {txnModal && <TxnModal account={selected} onClose={() => setTxnModal(false)} onSaved={() => { setTxnModal(false); loadTxns(selected?.id); loadAccounts(true); }} />}

@@ -207,6 +207,19 @@ router.post('/transfer', async (req, res) => {
   }
 });
 
+router.put('/transactions/:id', async (req, res) => {
+  try {
+    const { reference_type, description, txn_date } = req.body;
+    const [row] = await db('bank_transactions').where({ id: req.params.id })
+      .update({ reference_type: reference_type || null, description, txn_date })
+      .returning('*');
+    if (!row) return res.status(404).json({ error: 'Transaction not found' });
+    res.json(row);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error', detail: err.message });
+  }
+});
+
 router.delete('/transactions/:id', async (req, res) => {
   try {
     const txn = await db('bank_transactions').where({ id: req.params.id }).first();
