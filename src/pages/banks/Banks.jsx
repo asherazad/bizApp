@@ -5,6 +5,24 @@ import api from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { Plus, Landmark, ArrowUpRight, ArrowDownLeft, ArrowLeftRight, Pencil, Trash2 } from 'lucide-react';
 
+const TXN_CATEGORIES = [
+  'Client Payment',
+  'Salary',
+  'Vendor Payment',
+  'Utility Bill',
+  'Rent',
+  'Tax Payment',
+  'Office Supplies',
+  'Travel & Transport',
+  'Marketing',
+  'Insurance',
+  'Loan Repayment',
+  'Bank Charges',
+  'Transfer',
+  'Petty Cash',
+  'Other',
+];
+
 function AccountModal({ onClose, onSaved, wings }) {
   const toast = useToast();
   const [form, setForm] = useState({ wing_id: '', bank_name: '', account_number: '', account_title: '', branch: '', currency_code: 'PKR', opening_balance: '' });
@@ -240,7 +258,10 @@ function TxnModal({ account, onClose, onSaved }) {
               <input className="form-control" required value={form.description} onChange={f('description')} />
             </div>
             <div className="form-group"><label className="form-label">Category</label>
-              <input className="form-control" placeholder="e.g. Client Payment, Utility, Salary" value={form.category} onChange={f('category')} />
+              <select className="form-control" value={form.category} onChange={f('category')}>
+                <option value="">— Select category —</option>
+                {TXN_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
 
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
