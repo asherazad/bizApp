@@ -142,9 +142,9 @@ export default function Reports() {
 
   const [wings, setWings]         = useState([]);
   const [wingId, setWingId]       = useState('');
-  const [preset, setPreset]       = useState('month');
-  const [from, setFrom]           = useState(() => getPresetRange('month').from);
-  const [to, setTo]               = useState(() => getPresetRange('month').to);
+  const [preset, setPreset]       = useState('ytd');
+  const [from, setFrom]           = useState(() => getPresetRange('ytd').from);
+  const [to, setTo]               = useState(() => getPresetRange('ytd').to);
   const [summary, setSummary]     = useState(null);
   const [trend, setTrend]         = useState([]);
   const [receivables, setReceivables] = useState(null);

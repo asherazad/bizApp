@@ -30,8 +30,8 @@ router.get('/summary', async (req, res) => {
 
     if (!from || !to) {
       const now = new Date();
-      from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-      to   = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+      from = `${now.getFullYear()}-01-01`;
+      to   = now.toISOString().split('T')[0];
     }
 
     const fromM = toYYYYMM(from);
@@ -95,7 +95,7 @@ router.get('/summary', async (req, res) => {
 
     // ── Tax provision (all outstanding challans — standing liability) ─────────
     let taxQ = db('tax_challans')
-      .whereIn('status', ['pending', 'overdue'])
+      .whereIn('status', ['Pending', 'Overdue'])
       .select('business_wing_id')
       .sum('amount_due as tax_provision')
       .groupBy('business_wing_id');
@@ -277,7 +277,7 @@ router.get('/po-pipeline', async (req, res) => {
     let q = db('purchase_orders as po')
       .leftJoin('business_wings as bw', 'bw.id', 'po.business_wing_id')
       .leftJoin('clients as cl', 'cl.id', 'po.client_id')
-      .where('po.status', 'active')
+      .where('po.status', 'Active')
       .select(
         'po.id', 'po.po_number', 'po.po_value', 'po.currency',
         'po.issue_date', 'po.expiry_date', 'po.business_wing_id',
