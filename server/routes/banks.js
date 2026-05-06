@@ -95,7 +95,10 @@ router.get('/transactions', async (req, res) => {
         'business_wings.name as wing_name',
         'resources.full_name as linked_resource_name',
       )
-      .orderBy('bank_transactions.id', 'asc')
+      .orderBy([
+        { column: 'bank_transactions.txn_date', order: 'desc' },
+        { column: 'bank_transactions.id',       order: 'desc' },
+      ])
       .limit(parseInt(limit)).offset(parseInt(offset));
     if (wing_id)         q = q.where('bank_transactions.business_wing_id', wing_id);
     if (bank_account_id) q = q.where('bank_transactions.bank_account_id', bank_account_id);

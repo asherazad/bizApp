@@ -309,13 +309,12 @@ export default function Banks() {
       const r = await api.get('/banks/accounts', { params });
       setAccounts(r.data);
       if (preserveSelected && selected) {
+        // After a transaction/edit — keep the same account, refresh its balance
         const updated = r.data.find(a => a.id === selected.id);
         setSelected(updated || r.data[0] || null);
-      } else if (!selected && r.data.length) {
-        setSelected(r.data[0]);
-      } else if (selected) {
-        const updated = r.data.find(a => a.id === selected.id);
-        if (updated) setSelected(updated);
+      } else {
+        // Wing changed or initial load — always reset to first account of new wing
+        setSelected(r.data[0] || null);
       }
     }
     catch { toast('Failed to load accounts', 'error'); }
