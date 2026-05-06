@@ -403,18 +403,16 @@ export default function Banks() {
           <div className="table-wrap">
             <table className="table">
               <thead>
-                <tr><th>Date</th><th>Description</th><th>Category</th><th>Wing</th><th>Resource</th><th>Type</th><th className="text-right">Amount</th><th className="text-right">Balance</th><th style={{ width: 80 }}></th></tr>
+                <tr><th>Date</th><th>Description</th><th>Category</th><th>Type</th><th className="text-right">Amount</th><th className="text-right">Balance</th><th style={{ width: 80 }}></th></tr>
               </thead>
               <tbody>
                 {transactions.length === 0
-                  ? <tr><td colSpan={9} className="text-muted" style={{ textAlign: 'center', padding: 24 }}>No transactions</td></tr>
+                  ? <tr><td colSpan={7} className="text-muted" style={{ textAlign: 'center', padding: 24 }}>No transactions</td></tr>
                   : transactions.map((t) => (
                     <tr key={t.id}>
                       <td className="text-muted">{formatDate(t.txn_date)}</td>
                       <td>{t.description}</td>
                       <td className="text-muted">{t.reference_type || '—'}</td>
-                      <td className="text-muted" style={{ fontSize: 12 }}>{t.wing_name || '—'}</td>
-                      <td className="text-muted" style={{ fontSize: 12 }}>{t.linked_resource_name || '—'}</td>
                       <td>
                         {t.txn_type === 'Credit'
                           ? <span className="badge badge-success"><ArrowDownLeft size={11} /> Credit</span>
