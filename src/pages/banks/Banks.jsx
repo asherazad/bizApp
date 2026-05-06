@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
@@ -23,6 +23,54 @@ const TXN_CATEGORIES = [
   'Petty Cash',
   'Other',
 ];
+
+function CategorySelect({ value, onChange }) {
+  const [search, setSearch] = useState(value || '');
+  const [open, setOpen]     = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => { setSearch(value || ''); }, [value]);
+
+  useEffect(() => {
+    function onMouseDown(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, []);
+
+  const filtered = TXN_CATEGORIES.filter(c => c.toLowerCase().includes(search.toLowerCase()));
+
+  function select(c) { onChange(c); setSearch(c); setOpen(false); }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <input
+        className="form-control"
+        placeholder="Search or select category…"
+        value={search}
+        onFocus={() => setOpen(true)}
+        onChange={e => { setSearch(e.target.value); onChange(e.target.value); setOpen(true); }}
+      />
+      {open && filtered.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,.12)',
+          maxHeight: 200, overflowY: 'auto', marginTop: 2,
+        }}>
+          {filtered.map(c => (
+            <div key={c} onMouseDown={() => select(c)} style={{
+              padding: '8px 12px', cursor: 'pointer', fontSize: 13,
+              background: c === value ? 'var(--surface-2)' : undefined,
+            }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--surface-2)'}
+              onMouseLeave={e => e.currentTarget.style.background = c === value ? 'var(--surface-2)' : ''}
+            >{c}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function AccountModal({ onClose, onSaved, wings }) {
   const toast = useToast();
@@ -259,10 +307,7 @@ function TxnModal({ account, onClose, onSaved }) {
               <input className="form-control" required value={form.description} onChange={f('description')} />
             </div>
             <div className="form-group"><label className="form-label">Category</label>
-              <select className="form-control" value={form.category} onChange={f('category')}>
-                <option value="">— Select category —</option>
-                {TXN_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <CategorySelect value={form.category} onChange={v => setForm(p => ({ ...p, category: v }))} />
             </div>
 
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -344,10 +389,7 @@ function EditTxnModal({ txn, onClose, onSaved }) {
               <input className="form-control" required value={form.description} onChange={f('description')} />
             </div>
             <div className="form-group"><label className="form-label">Category</label>
-              <select className="form-control" value={form.reference_type} onChange={f('reference_type')}>
-                <option value="">— Select category —</option>
-                {TXN_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <CategorySelect value={form.reference_type} onChange={v => setForm(p => ({ ...p, reference_type: v }))} />
             </div>
           </div>
           <div className="modal-footer">
