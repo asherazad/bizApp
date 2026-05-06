@@ -25,6 +25,7 @@ app.use('/api/reminders',     require('./routes/reminders'));
 app.use('/api/dashboard',     require('./routes/dashboard'));
 app.use('/api/creditcard',    require('./routes/creditcard'));
 app.use('/api/wave',          require('./routes/wave'));
+app.use('/api/reports',       require('./routes/reports'));
 
 app.get('/api/health', async (_req, res) => {
   if (!supabase) return res.status(503).json({ status: 'error', db: 'disabled', message: 'Supabase env vars not set' });

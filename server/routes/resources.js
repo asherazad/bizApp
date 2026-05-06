@@ -247,6 +247,7 @@ router.put('/:id', async (req, res) => {
       'join_date', 'gross_salary', 'tax_amount', 'net_salary',
       'basic_salary', 'resource_type',
       'last_review_date', 'last_increment_amount', 'allowance_amount',
+      'billing_rate',
     ];
     const update = Object.fromEntries(
       allowed.filter(k => k in req.body).map(k => [k, req.body[k]])

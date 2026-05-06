@@ -4,11 +4,13 @@ import {
   LayoutDashboard, Building2, Landmark, Users2, FileText,
   ShoppingCart, Receipt, UserCheck, Calendar, Wallet,
   CreditCard, Plane, RefreshCw, Bell, Users, LogOut, HandCoins,
+  BarChart2,
 } from 'lucide-react';
 
 const NAV = [
   { section: 'Overview' },
   { to: '/dashboard',       icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/reports',         icon: BarChart2,        label: 'P&L Reports' },
   { section: 'Finance' },
   { to: '/invoices',        icon: FileText,         label: 'Invoices' },
   { to: '/purchase-orders', icon: ShoppingCart,     label: 'Purchase Orders' },

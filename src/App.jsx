@@ -19,6 +19,7 @@ import Subscriptions from './pages/subscriptions/Subscriptions';
 import Reminders from './pages/reminders/Reminders';
 import Users from './pages/users/Users';
 import CreditCard from './pages/creditcard/CreditCard';
+import Reports from './pages/reports/Reports';
 
 export default function App() {
   return (
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="/subscriptions"    element={<Subscriptions />} />
           <Route path="/reminders"        element={<Reminders />} />
           <Route path="/users"            element={<Users />} />
+          <Route path="/reports"          element={<Reports />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
