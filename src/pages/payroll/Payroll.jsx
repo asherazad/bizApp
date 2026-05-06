@@ -311,7 +311,10 @@ function RunPayrollTab({ wings, activeWing, toast }) {
                     <button
                       className="btn btn-primary btn-sm"
                       style={{ fontSize: 11, padding: '3px 8px' }}
-                      onClick={() => setSingleRow(row)}
+                      onClick={() => {
+                        if (row.status === 'paid' && !window.confirm(`${row.resource_name} has already been paid for this month. Re-processing will create a new bank debit. Continue?`)) return;
+                        setSingleRow(row);
+                      }}
                       title={row.status === 'paid' ? 'Re-process salary' : 'Process salary'}
                     >
                       {row.status === 'paid' ? 'Re-pay' : 'Pay'}
@@ -812,7 +815,10 @@ function HistoryTab({ wings, toast }) {
                       <button
                         className="btn btn-secondary btn-sm"
                         style={{ fontSize: 11, padding: '3px 8px', color: 'var(--danger, #dc3545)' }}
-                        onClick={() => setReverseTarget(r)}
+                        onClick={() => {
+                          if (!window.confirm(`Reverse salary payment for ${r.resource_name}? This will mark it as Reversed and optionally credit the bank account.`)) return;
+                          setReverseTarget(r);
+                        }}
                         title="Reverse this salary payment"
                       >
                         Reverse
